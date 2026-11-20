@@ -1,7 +1,36 @@
 // Vice Point — procedural WebAudio sound. No audio files: every sound is
 // synthesized with oscillators and filtered noise at run time. The engine
 // hums with speed, footsteps tick with the walk cycle, the UI blips, mission
-// completions play a little arpeggio, and the sea murmurs underneath it all.
+// completions play a little arpeggio, the sea murmurs underneath it all,
+// three radio stations play procedurally generated loops in the car, and
+// gunshots crack through a band-passed noise burst.
+
+export const RADIO_CHANNELS = [
+  { name: 'VICE FM 88.1 — Neon Nights', bpm: 100, root: 110, wave: 'sawtooth', minor: true },
+  { name: 'PALM 102.4 — Sunset Drive', bpm: 80, root: 130.81, wave: 'triangle', minor: false },
+  { name: 'PIER 9 95.5 — Bassline', bpm: 116, root: 98, wave: 'square', minor: true },
+];
+
+const MINOR_SCALE = [0, 2, 3, 5, 7, 8, 10];
+const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
+
+// Deterministic patterns per channel, so every station sounds the same
+// on every load: a 16-step bass line and a sparse lead line.
+function channelPatterns(seed) {
+  let a = seed >>> 0;
+  const next = () => {
+    a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+    return a / 4294967296;
+  };
+  const bass = [];
+  const lead = [];
+  for (let i = 0; i < 16; i++) {
+    bass.push(next() < 0.25 ? -1 : Math.floor(next() * 7));
+    lead.push(next() < 0.62 ? -1 : Math.floor(next() * 7));
+  }
+  return { bass, lead };
+}
+const RADIO_PATTERNS = RADIO_CHANNELS.map((_, i) => channelPatterns(7919 * (i + 1) + 13));
 
 export class SoundEngine {
   constructor() {
@@ -19,6 +48,13 @@ export class SoundEngine {
     this.sirenLfo = null;
     this.sirenGain = null;
     this.sirenOn = false;
+    // Radio: channel index, on-air flag, scheduler state.
+    this.radioChannel = 0;
+    this.radioOn = false;
+    this.radioGain = null;
+    this.radioTimer = null;
+    this.radioStep = 0;
+    this.radioNextTime = 0;
   }
 
   // Must be called from a user gesture (the start button) so the browser
@@ -34,7 +70,11 @@ export class SoundEngine {
     this.master = this.ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.55;
     this.master.connect(this.ctx.destination);
+    this.radioGain = this.ctx.createGain();
+    this.radioGain.gain.value = 0.13;
+    this.radioGain.connect(this.master);
     this.startWaves();
+    this.startRadioScheduler();
   }
 
   setMuted(muted) {
@@ -75,6 +115,149 @@ export class SoundEngine {
     gain.connect(this.master);
     src.start();
     lfo.start();
+  }
+
+  // --- radio: three procedural stations, scheduled a few notes ahead ---
+  // The scheduler only runs while the radio is on-air (in the car) and
+  // the context is actually running, so a suspended context never queues
+  // a backlog of notes in the past.
+  startRadioScheduler() {
+    if (this.radioTimer) return;
+    this.radioTimer = window.setInterval(() => this.radioTick(), 60);
+  }
+
+  setRadioActive(on) {
+    if (on === this.radioOn) return;
+    this.radioOn = on;
+    if (on && this.ctx) {
+      this.radioStep = 0;
+      this.radioNextTime = this.ctx.currentTime + 0.05;
+    }
+  }
+
+  cycleRadio() {
+    this.radioChannel = (this.radioChannel + 1) % RADIO_CHANNELS.length;
+    if (this.radioOn && this.ctx) {
+      this.radioStep = 0;
+      this.radioNextTime = this.ctx.currentTime + 0.05;
+    }
+    return RADIO_CHANNELS[this.radioChannel].name;
+  }
+
+  radioTick() {
+    if (!this.ctx || !this.radioOn || this.ctx.state !== 'running') return;
+    const ch = RADIO_CHANNELS[this.radioChannel];
+    const stepDur = 60 / ch.bpm / 4;
+    let guard = 0;
+    while (this.radioNextTime < this.ctx.currentTime + 0.18 && guard < 32) {
+      this.scheduleRadioStep(ch, this.radioStep, this.radioNextTime, stepDur);
+      this.radioStep = (this.radioStep + 1) % 64;
+      this.radioNextTime += stepDur;
+      guard++;
+    }
+  }
+
+  scheduleRadioStep(ch, step, t, stepDur) {
+    const scale = ch.minor ? MINOR_SCALE : MAJOR_SCALE;
+    const pat = RADIO_PATTERNS[this.radioChannel];
+    const bar = step % 16;
+    // Kick on the quarters (laid back on the chill station).
+    const kickSteps = this.radioChannel === 1 ? [0, 8] : [0, 4, 8, 12];
+    if (kickSteps.includes(bar)) this.radioKick(t);
+    // Hat on the off-beats.
+    if (bar % 2 === 1) this.radioHat(t);
+    // Bass line, one octave under the root.
+    const bassDeg = pat.bass[bar];
+    if (bassDeg >= 0) {
+      const freq = (ch.root / 2) * Math.pow(2, scale[bassDeg] / 12);
+      this.radioNote(t, freq, ch.wave, stepDur * 0.9, 0.5);
+    }
+    // Sparse lead, two octaves up, quieter.
+    const leadDeg = pat.lead[bar];
+    if (leadDeg >= 0) {
+      const freq = ch.root * 2 * Math.pow(2, scale[leadDeg] / 12);
+      this.radioNote(t, freq, 'triangle', stepDur * 0.7, 0.22);
+    }
+  }
+
+  radioNote(t, freq, wave, dur, gainVal) {
+    const osc = this.ctx.createOscillator();
+    osc.type = wave;
+    osc.frequency.value = freq;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(gainVal, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(gain);
+    gain.connect(this.radioGain);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+  }
+
+  radioKick(t) {
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.9, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    osc.connect(gain);
+    gain.connect(this.radioGain);
+    osc.start(t);
+    osc.stop(t + 0.18);
+  }
+
+  radioHat(t) {
+    const dur = 0.04;
+    const buf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 6000;
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0.25;
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.radioGain);
+    src.start(t);
+  }
+
+  // --- gunshot: a band-passed noise crack plus a low thump ---
+  shot(kind) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const dur = kind === 'smg' ? 0.06 : 0.1;
+    const buf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = kind === 'smg' ? 2400 : 1700;
+    filter.Q.value = 0.9;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(kind === 'smg' ? 0.35 : 0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    src.start(t);
+    const thump = this.ctx.createOscillator();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(110, t);
+    thump.frequency.exponentialRampToValueAtTime(55, t + 0.09);
+    const tg = this.ctx.createGain();
+    tg.gain.setValueAtTime(0.3, t);
+    tg.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    thump.connect(tg);
+    tg.connect(this.master);
+    thump.start(t);
+    thump.stop(t + 0.12);
   }
 
   // --- engine: two detuned saws through a lowpass, pitch follows speed ---

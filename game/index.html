@@ -21,6 +21,27 @@
   #wantedBox { position: absolute; top: 76px; left: 16px; font-size: 22px; letter-spacing: 3px;
     color: #ffd166; text-shadow: 0 0 8px rgba(255, 209, 102, .7), 0 1px 2px #000; }
   #wantedBox .off { color: rgba(255, 255, 255, .25); text-shadow: 0 1px 2px #000; }
+  #respectBox { position: absolute; top: 112px; left: 16px; background: rgba(8, 20, 32, .62);
+    border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px; padding: 6px 12px;
+    font-size: 13px; font-weight: bold; letter-spacing: 1px; color: #37e0c8; text-shadow: 0 1px 2px #000; }
+  #weaponBox { position: absolute; left: 16px; bottom: 16px; background: rgba(8, 20, 32, .62);
+    border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px; padding: 8px 14px;
+    font-size: 17px; font-weight: bold; letter-spacing: .5px; text-shadow: 0 1px 2px #000; }
+  #weaponBox small { display: block; font-size: 10px; font-weight: normal; opacity: .75; letter-spacing: 2px; }
+  #radioBox { position: absolute; left: 16px; bottom: 76px; background: rgba(8, 20, 32, .62);
+    border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px; padding: 6px 12px;
+    font-size: 13px; letter-spacing: .5px; text-shadow: 0 1px 2px #000; }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+    border-radius: 50%; background: rgba(255, 255, 255, .85); box-shadow: 0 0 4px #000; }
+  #crosshair.aim { width: 12px; height: 12px; margin: -6px 0 0 -6px; background: transparent;
+    border: 2px solid rgba(255, 255, 255, .9); box-shadow: 0 0 6px #000; }
+  #weaponWheel { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    display: flex; gap: 18px; background: rgba(8, 20, 32, .72); border: 1px solid rgba(255, 255, 255, .3);
+    border-radius: 14px; padding: 16px 22px; }
+  .wheelSlot { text-align: center; font-size: 15px; font-weight: bold; letter-spacing: 1px;
+    padding: 10px 18px; border-radius: 10px; border: 2px solid rgba(255, 255, 255, .35); }
+  .wheelSlot small { display: block; font-size: 11px; font-weight: normal; opacity: .8; margin-top: 2px; }
+  .wheelSlot.active { border-color: #ffd166; color: #ffd166; }
   #missionBox { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
     background: rgba(8, 20, 32, .62); border: 1px solid rgba(255, 255, 255, .22);
     border-radius: 10px; padding: 8px 16px; text-align: center; max-width: 46vw; }
@@ -73,6 +94,7 @@
 <div id="hud" class="hidden">
   <div id="cashBox">$<span id="cashValue">0</span><small>VICE POINT</small></div>
   <div id="wantedBox" title="Wanted level"></div>
+  <div id="respectBox"><span id="respectValue">RESPECT 0 · GARAGE 0</span></div>
   <div id="missionBox">
     <div id="missionTitle">MISSION</div>
     <div id="missionText"></div>
@@ -80,8 +102,15 @@
   </div>
   <div id="minimapWrap"><canvas id="minimap" width="368" height="368"></canvas></div>
   <div id="speedBox" class="hidden"><span id="speedValue">0</span><small>MPH</small></div>
+  <div id="radioBox" class="hidden"><span id="radioValue"></span></div>
+  <div id="weaponBox"><span id="weaponValue">PISTOL · ∞</span><small>WEAPON · HOLD Q WHEEL · 1/2 SWITCH</small></div>
   <div id="hintBox">WASD move &nbsp;·&nbsp; drag mouse to look &nbsp;·&nbsp; SHIFT run &nbsp;·&nbsp; SPACE jump &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; M mute</div>
   <div id="toast"></div>
+  <div id="crosshair"></div>
+  <div id="weaponWheel" class="hidden">
+    <div class="wheelSlot" id="wheelPistol">PISTOL<small>1 · ∞ ammo</small></div>
+    <div class="wheelSlot" id="wheelSmg">SMG<small>2 · 270 ammo</small></div>
+  </div>
 </div>
 
 <div id="startScreen" class="screen">
@@ -96,7 +125,9 @@
     <div id="saveInfo" class="saveInfo"></div>
     <div class="controls">
       <b>WASD</b> walk / drive &nbsp;·&nbsp; <b>Mouse drag</b> look &nbsp;·&nbsp; <b>SHIFT</b> run<br>
-      <b>SPACE</b> jump &nbsp;·&nbsp; <b>E</b> enter / exit car &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>ESC</b> pause
+      <b>SPACE</b> jump &nbsp;·&nbsp; <b>E</b> enter / exit car &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>ESC</b> pause<br>
+      <b>Click</b> shoot &nbsp;·&nbsp; <b>Right mouse</b> aim up &nbsp;·&nbsp; <b>Q</b> weapon wheel &nbsp;·&nbsp; <b>1/2</b> switch weapon<br>
+      <b>R</b> radio station &nbsp;·&nbsp; <b>G</b> garage (on the beach lot)
     </div>
     <div class="foot">VICE POINT — AN ORIGINAL OPEN-WORLD GAME · PLAYS OFFLINE</div>
   </div>

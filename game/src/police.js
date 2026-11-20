@@ -32,12 +32,30 @@ export class PoliceManager {
     this.police = []; // { group, speed, yaw, stuckTimer, lastX, lastZ, detour, detourTimer, flash }
     this.anchor = { x: 0, z: 0 }; // where the player is: spawn point for new units
     this.lastKnown = { x: 0, z: 0 };
+    // Air One overhead means one extra Interceptor and no cooling off.
+    this.heliActive = false;
+    // Roadblocks: barricades the police throw across the road ahead of
+    // Ray once the heat hits 3 stars. Each is a group with two parked
+    // Interceptors and a striped barrier; blockColliders is the AABB list
+    // the game loop merges into the driving collision.
+    this.roadblocks = []; // { group, x, z }
+    this.blockColliders = [];
+    this.roadblockTimer = 0;
   }
 
   desiredCount() {
-    if (this.wanted >= 4) return 3;
-    if (this.wanted >= 2) return 2;
-    if (this.wanted >= 1) return 1;
+    let n;
+    if (this.wanted >= 4) n = 3;
+    else if (this.wanted >= 2) n = 2;
+    else if (this.wanted >= 1) n = 1;
+    else n = 0;
+    if (this.heliActive && n > 0) n += 1; // Air One calls in backup
+    return n;
+  }
+
+  desiredRoadblocks() {
+    if (this.wanted >= 5) return 2;
+    if (this.wanted >= 3) return 1;
     return 0;
   }
 
@@ -100,6 +118,7 @@ export class PoliceManager {
       detour: 0,
       detourTimer: 0,
       flash: Math.random(),
+      hp: 100,
       red,
       blue,
     });
@@ -111,6 +130,122 @@ export class PoliceManager {
     this.scene.remove(p.group);
   }
 
+  // Shoot an Interceptor: returns 'destroyed' when its hp runs out (the
+  // unit leaves the scene), 'hit' on a damaging hit, null when the index
+  // is stale. No wanted change — the heat is already on.
+  damagePolice(index, dmg) {
+    const p = this.police[index];
+    if (!p) return null;
+    p.hp -= dmg;
+    if (p.hp > 0) return 'hit';
+    this.scene.remove(p.group);
+    this.police.splice(index, 1);
+    return 'destroyed';
+  }
+
+  // --- roadblocks ---
+  makeRoadblockCar() {
+    const group = makeCar(0x14181f);
+    const barGeo = new THREE.BoxGeometry(0.5, 0.16, 0.34);
+    const red = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color: 0xff2a2a }));
+    red.position.set(-0.32, 1.56, -0.25);
+    const blue = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color: 0x2a6bff }));
+    blue.position.set(0.32, 1.56, -0.25);
+    group.add(red);
+    group.add(blue);
+    return group;
+  }
+
+  // A striped barrier: alternating orange / white blocks across the road.
+  makeBarrier() {
+    const g = new THREE.Group();
+    const orange = new THREE.MeshLambertMaterial({ color: 0xe8722a });
+    const white = new THREE.MeshLambertMaterial({ color: 0xe8e8e8 });
+    for (let i = 0; i < 7; i++) {
+      const seg = new THREE.Mesh(
+        new THREE.BoxGeometry(1.1, 0.55, 0.3),
+        i % 2 === 0 ? orange : white,
+      );
+      seg.position.set(-3.3 + i * 1.1, 0.75, 0);
+      g.add(seg);
+    }
+    for (const lx of [-3.3, 3.3]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.75, 0.6), orange);
+      leg.position.set(lx, 0.38, 0);
+      g.add(leg);
+    }
+    return g;
+  }
+
+  clearRoadblocks() {
+    for (const rb of this.roadblocks) this.scene.remove(rb.group);
+    this.roadblocks = [];
+    this.blockColliders = [];
+  }
+
+  // Place the barricades on the street ahead of the player, snapped to
+  // the nearest street centreline so they sit on asphalt, not in a
+  // building. `heading` is the player's yaw. Rebuilt every few seconds
+  // as Ray moves; skipped entirely off-road (beach, pier).
+  updateRoadblocks(dt, px, pz, heading) {
+    this.roadblockTimer -= dt;
+    const want = this.desiredRoadblocks();
+    if (want === 0) {
+      if (this.roadblocks.length > 0) this.clearRoadblocks();
+      return;
+    }
+    if (this.roadblocks.length !== want || this.roadblockTimer <= 0) {
+      this.roadblockTimer = 4;
+      this.clearRoadblocks();
+      // Off the road grid (beach / pier): no street to block.
+      if (pz > 150 || Math.abs(px) > 158) return;
+      const streetLines = [-100, -50, 0, 50, 100];
+      const snap = (v) => streetLines.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
+      const fx = Math.sin(heading);
+      const fz = Math.cos(heading);
+      for (let i = 0; i < want; i++) {
+        const ahead = 45 + i * 32;
+        const ax = px + fx * ahead;
+        const az = pz + fz * ahead;
+        let cx;
+        let cz;
+        if (Math.abs(fx) > Math.abs(fz)) {
+          cx = Math.max(-150, Math.min(150, ax));
+          cz = snap(az);
+        } else {
+          cx = snap(ax);
+          cz = Math.max(-150, Math.min(150, az));
+        }
+        const group = new THREE.Group();
+        // Two Interceptors parked across the road, plus a barrier.
+        const carYaw = heading + Math.PI / 2;
+        for (const off of [-3.4, 3.4]) {
+          const car = this.makeRoadblockCar();
+          // Side by side across the road: offset perpendicular to the
+          // player's heading, car noses pointing across the asphalt.
+          const ox = Math.cos(heading) * off;
+          const oz = -Math.sin(heading) * off;
+          car.position.set(cx + ox, 0, cz + oz);
+          car.rotation.y = carYaw;
+          group.add(car);
+          // AABB for the parked car, from its yaw.
+          const hx = Math.abs(Math.cos(carYaw)) * 1.1 + Math.abs(Math.sin(carYaw)) * 2.3;
+          const hz = Math.abs(Math.sin(carYaw)) * 1.1 + Math.abs(Math.cos(carYaw)) * 2.3;
+          this.blockColliders.push({
+            minX: cx + ox - hx, maxX: cx + ox + hx,
+            minZ: cz + oz - hz, maxZ: cz + oz + hz,
+          });
+        }
+        const barrier = this.makeBarrier();
+        barrier.position.set(cx, 0, cz);
+        barrier.rotation.y = heading;
+        group.add(barrier);
+        this.scene.add(group);
+        this.roadblocks.push({ group, x: cx, z: cz });
+      }
+    }
+  }
+
   // `ctx`: { px, pz, playerSpeed, inCar, playerCar, colliders }.
   // playerCar is the player's car object ({ group, speed }) or null.
   // Returns 'busted' when the pin-down timer runs out, else null.
@@ -120,16 +255,25 @@ export class PoliceManager {
     this.anchor.z = ctx.pz;
     if (this.wanted <= 0) {
       if (this.police.length > 0) this.syncPolice();
+      if (this.roadblocks.length > 0) this.clearRoadblocks();
       return null;
     }
+    // Keep the count honest every frame: Air One joining (or leaving)
+    // changes the desired count without any setWanted call.
+    this.syncPolice();
 
-    // --- wanted decay: only while no Interceptor can see Ray ---
+    // --- wanted decay: only while no Interceptor can see Ray — and
+    // never while Air One is overhead: the heli keeps the heat on. ---
     let nearest = Infinity;
     for (const p of this.police) {
       const d = Math.hypot(p.group.position.x - ctx.px, p.group.position.z - ctx.pz);
       if (d < nearest) nearest = d;
     }
-    if (this.police.length === 0 || nearest > UNSEEN_DISTANCE) {
+    if (this.heliActive) {
+      this.decayTimer = 0;
+      this.lastKnown.x = ctx.px;
+      this.lastKnown.z = ctx.pz;
+    } else if (this.police.length === 0 || nearest > UNSEEN_DISTANCE) {
       this.decayTimer += dt;
       if (this.decayTimer >= DECAY_SECONDS) {
         this.decayTimer = 0;
@@ -220,6 +364,9 @@ export class PoliceManager {
       p.red.visible = on;
       p.blue.visible = !on;
     }
+
+    // --- roadblocks: barricades across the road ahead, from 3 stars ---
+    this.updateRoadblocks(dt, ctx.px, ctx.pz, ctx.heading ?? 0);
 
     // --- busted: pinned down close by while slow or on foot ---
     if (nearest < BUST_DISTANCE && ctx.playerSpeed < 4) {

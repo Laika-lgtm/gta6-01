@@ -10,7 +10,10 @@ import { makeCar, driveCar, resolveCircleCollision } from './vehicles.js';
 import { createTraffic } from './traffic.js';
 import { MissionManager, MISSIONS } from './missions.js';
 import { PoliceManager } from './police.js';
-import { SoundEngine } from './audio.js';
+import { SoundEngine, RADIO_CHANNELS } from './audio.js';
+import { WeaponManager } from './weapons.js';
+import { HeliManager } from './heli.js';
+import { GarageManager } from './garage.js';
 
 const SAVE_KEY = 'vicepoint-save-v1';
 const $ = (id) => document.getElementById(id);
@@ -32,6 +35,8 @@ const missions = new MissionManager(scene, { hotel: city.hotelSpot });
 const sound = new SoundEngine();
 const police = new PoliceManager(scene, sound);
 police.colliders = city.colliders;
+const weapons = new WeaponManager(scene, sound);
+const heli = new HeliManager(scene, city.buildings);
 
 // ---------------------------------------------------------------- player
 function makePlayer() {
@@ -88,7 +93,11 @@ const cars = city.carSpots.map((spot) => {
   group.position.set(spot.x, 0, spot.z);
   group.rotation.y = spot.yaw;
   scene.add(group);
-  return { group, speed: 0, yaw: spot.yaw, color: spot.color };
+  return { group, speed: 0, yaw: spot.yaw, color: spot.color, parked: false };
+});
+const garage = new GarageManager(scene, cars, (i) => {
+  const m = missions.current();
+  return Boolean(m && m.kind === 'getaway' && m.carIndex === i && missions.index === 2);
 });
 
 // ---------------------------------------------------------------- state
@@ -97,6 +106,7 @@ const state = {
   paused: false,
   cinematic: false,
   cash: 250, // Ray starts the Mara Voss chain with $250 in his pocket.
+  respect: 0, // Grows with finished jobs, falls with busts; gates jobs 7-8.
   inCar: false,
   carIndex: -1,
   yaw: Math.PI,
@@ -104,6 +114,10 @@ const state = {
   grounded: true,
   camYaw: Math.PI,
   camPitch: 0.32,
+  aiming: false, // right mouse held: over-shoulder aim, pitch can go up
+  wheelOpen: false,
+  mouseX: 0,
+  mouseY: 0,
   walkPhase: 0,
   stepAcc: 0,
   time: 0,
@@ -115,6 +129,7 @@ const state = {
   lastPedHit: -10,
   lastPoliceHit: -10,
   lastMissionIndex: 0,
+  prevWanted: 0,
 };
 player.position.set(city.spawnPoint.x, 0, city.spawnPoint.z);
 player.rotation.y = state.yaw;
@@ -127,8 +142,12 @@ function saveGame() {
       z: player.position.z,
       yaw: state.yaw,
       cash: state.cash,
+      respect: state.respect,
       wanted: police.wanted,
       mission: missions.serialize(),
+      garage: garage.serialize(),
+      weapons: weapons.serialize(),
+      radio: sound.radioChannel,
     }));
   } catch (_e) { /* storage unavailable: the game still plays */ }
 }
@@ -148,7 +167,11 @@ function applySave(data) {
   player.position.set(data.x ?? city.spawnPoint.x, 0, data.z ?? city.spawnPoint.z);
   state.yaw = data.yaw ?? Math.PI;
   state.cash = data.cash ?? 250;
+  state.respect = data.respect ?? 0;
   missions.restore(data.mission);
+  garage.restore(data.garage);
+  weapons.restore(data.weapons);
+  if (typeof data.radio === 'number') sound.radioChannel = data.radio;
   // Spawn any wanted police around the player, not around the origin.
   police.anchor.x = player.position.x;
   police.anchor.z = player.position.z;
@@ -160,21 +183,35 @@ function applySave(data) {
 // ---------------------------------------------------------------- HUD
 const hud = $('hud');
 const cashValue = $('cashValue');
+const respectValue = $('respectValue');
 const missionTitle = $('missionTitle');
 const missionText = $('missionText');
 const missionDist = $('missionDist');
 const speedBox = $('speedBox');
 const speedValue = $('speedValue');
+const weaponBox = $('weaponBox');
+const weaponValue = $('weaponValue');
+const radioBox = $('radioBox');
+const radioValue = $('radioValue');
 const hintBox = $('hintBox');
 const toastEl = $('toast');
 const minimap = $('minimap');
 const mapCtx = minimap.getContext('2d');
 const wantedEl = $('wantedBox');
+const crosshairEl = $('crosshair');
+const wheelEl = $('weaponWheel');
 let toastTimer = 0;
 let lastCash = -1;
 let lastMissionKey = '';
 let lastHint = '';
 let lastWanted = -1;
+let lastWeaponKey = '';
+let lastRadioKey = '';
+let lastRespectKey = '';
+
+function addRespect(n) {
+  state.respect = Math.max(0, state.respect + n);
+}
 
 function showToast(text) {
   toastEl.textContent = text;
@@ -197,12 +234,17 @@ function updateHud() {
     wantedEl.innerHTML = stars;
   }
   const m = missions.current();
-  const key = m ? m.id : 'done';
+  const key = m ? `${m.id}:${missions.locked ? 'locked' : 'open'}:${missions.stage}` : 'done';
   if (key !== lastMissionKey) {
     lastMissionKey = key;
     if (m) {
-      missionTitle.textContent = `MISSION ${missions.index + 1}/3 — ${m.title}`;
-      missionText.textContent = m.text;
+      if (missions.locked) {
+        missionTitle.textContent = `LOCKED — NEED ${m.respect} RESPECT`;
+        missionText.textContent = `${m.title} is waiting: finish jobs, drop Interceptors and Air One to earn respect.`;
+      } else {
+        missionTitle.textContent = `MISSION ${missions.index + 1}/${MISSIONS.length} — ${m.title}`;
+        missionText.textContent = m.text;
+      }
     } else {
       missionTitle.textContent = 'FREE ROAM';
       missionText.textContent = 'Vice Point is yours. Earn cash, borrow cars, own the streets.';
@@ -213,6 +255,32 @@ function updateHud() {
   // mission manager keeps valid for every job kind.
   if (m && m.kind === 'escape') {
     missionDist.textContent = 'Lose the cops — stay out of sight until the heat clears';
+  } else if (m && m.kind === 'timed') {
+    const px = state.inCar ? cars[state.carIndex].group.position.x : player.position.x;
+    const pz = state.inCar ? cars[state.carIndex].group.position.z : player.position.z;
+    const d = Math.round(Math.hypot(px - missions.markerPos.x, pz - missions.markerPos.z));
+    missionDist.textContent = `${Math.max(0, Math.ceil(missions.timeLeft))}s left — ${d} m to marker`;
+  } else if (m && m.kind === 'chase') {
+    const px = state.inCar ? cars[state.carIndex].group.position.x : player.position.x;
+    const pz = state.inCar ? cars[state.carIndex].group.position.z : player.position.z;
+    const d = Math.round(Math.hypot(px - missions.markerPos.x, pz - missions.markerPos.z));
+    missionDist.textContent = `Stay on the pink coupe — ${d} m`;
+  } else if (m && m.kind === 'sabotage') {
+    if (missions.holdTimer > 0) {
+      missionDist.textContent = `Planting… ${missions.holdTimer.toFixed(1)}s / ${m.hold}s — hold still!`;
+    } else {
+      const px = state.inCar ? cars[state.carIndex].group.position.x : player.position.x;
+      const pz = state.inCar ? cars[state.carIndex].group.position.z : player.position.z;
+      const d = Math.round(Math.hypot(px - missions.markerPos.x, pz - missions.markerPos.z));
+      missionDist.textContent = `${d} m to the warehouse gate — hold still to plant`;
+    }
+  } else if (m && m.kind === 'heist') {
+    const px = state.inCar ? cars[state.carIndex].group.position.x : player.position.x;
+    const pz = state.inCar ? cars[state.carIndex].group.position.z : player.position.z;
+    const d = Math.round(Math.hypot(px - missions.markerPos.x, pz - missions.markerPos.z));
+    missionDist.textContent = missions.stage === 0
+      ? `Grab the cash — ${d} m to the bank`
+      : `Run! ${d} m to the pier — lose the heat on the way`;
   } else if (m) {
     const px = state.inCar ? cars[state.carIndex].group.position.x : player.position.x;
     const pz = state.inCar ? cars[state.carIndex].group.position.z : player.position.z;
@@ -220,14 +288,42 @@ function updateHud() {
   } else {
     missionDist.textContent = '';
   }
+  // Weapon + ammo, radio station, respect + garage stash.
+  const w = weapons.current();
+  const ammo = w.ammo === Infinity ? '∞' : weapons.ammoLeft();
+  const wKey = `${w.id}:${ammo}`;
+  if (wKey !== lastWeaponKey) {
+    lastWeaponKey = wKey;
+    weaponValue.textContent = `${w.name} · ${ammo}`;
+  }
+  if (!wheelEl.classList.contains('hidden')) {
+    $('wheelPistol').classList.toggle('active', weapons.index === 0);
+    $('wheelSmg').classList.toggle('active', weapons.index === 1);
+  }
+  const rKey = state.inCar ? `in:${sound.radioChannel}` : 'out';
+  if (rKey !== lastRadioKey) {
+    lastRadioKey = rKey;
+    if (state.inCar) {
+      radioBox.classList.remove('hidden');
+      radioValue.textContent = `♪ ${RADIO_CHANNELS[sound.radioChannel].name}`;
+    } else {
+      radioBox.classList.add('hidden');
+    }
+  }
+  const respectKey = `${state.respect}:${garage.stored.length}`;
+  if (respectKey !== lastRespectKey) {
+    lastRespectKey = respectKey;
+    respectValue.textContent = `RESPECT ${state.respect} · GARAGE ${garage.stored.length}`;
+  }
   if (state.inCar) {
     speedBox.classList.remove('hidden');
     speedValue.textContent = Math.round(Math.abs(cars[state.carIndex].speed) * 2.237);
   } else {
     speedBox.classList.add('hidden');
   }
-  let hint = 'WASD move · drag mouse to look · SHIFT run · SPACE jump · E enter car · F punch · M mute';
-  if (state.inCar) hint = 'WASD drive · E exit car · M mute · ESC pause';
+  crosshairEl.classList.toggle('aim', state.aiming);
+  let hint = 'WASD move · drag mouse to look · SHIFT run · SPACE jump · E enter car · F punch · Q weapons · R radio · M mute';
+  if (state.inCar) hint = 'WASD drive · E exit car · Q weapons · R radio · G garage · M mute · ESC pause';
   else if (nearestCar(3.6)) hint = 'Press E to get in the car';
   if (hint !== lastHint) {
     hintBox.textContent = hint;
@@ -297,6 +393,28 @@ function drawMinimap() {
       g.fill();
     }
   }
+  // Air One: a white ringed dot while the heli is overhead.
+  if (heli.active && heli.position) {
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.arc(toX(heli.position.x), toY(heli.position.z), 6, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = '#ff2a2a';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(toX(heli.position.x), toY(heli.position.z), 8, 0, Math.PI * 2);
+    g.stroke();
+  }
+  // The pink coupe Ray is tailing.
+  if (missions.current() && missions.current().kind === 'chase') {
+    g.fillStyle = '#ff5da2';
+    g.beginPath();
+    g.arc(toX(missions.chaseCar.position.x), toY(missions.chaseCar.position.z), 5, 0, Math.PI * 2);
+    g.fill();
+  }
+  // The beach garage: a small yellow square.
+  g.fillStyle = '#ffd166';
+  g.fillRect(toX(garage.spot.x) - 4, toY(garage.spot.z) - 4, 8, 8);
   // Mission marker: a pulsing diamond, or an edge arrow when far away.
   if (missions.current()) {
     const mx = missions.markerPos.x;
@@ -374,33 +492,76 @@ window.addEventListener('keydown', (e) => {
     showToast(sound.muted ? 'Sound muted' : 'Sound on');
   }
   if (e.code === 'Escape' && state.started) togglePause();
+  if (e.code === 'KeyQ' && state.started && !state.paused) {
+    state.wheelOpen = true;
+    wheelEl.classList.remove('hidden');
+  }
+  if ((e.code === 'Digit1' || e.code === 'Digit2') && state.started && !state.paused) {
+    const i = e.code === 'Digit1' ? 0 : 1;
+    if (weapons.switchTo(i)) showToast(`Weapon: ${weapons.current().name}`);
+  }
+  if (e.code === 'KeyR' && state.started && !state.paused) {
+    showToast(`Radio: ${sound.cycleRadio()}`);
+  }
+  if (e.code === 'KeyG' && state.started && !state.paused) tryGarage();
 });
 
 window.addEventListener('keyup', (e) => {
   keys[e.code] = false;
+  // Releasing Q picks the weapon under the mouse: left half pistol,
+  // right half SMG; the wheel hides again.
+  if (e.code === 'KeyQ' && state.wheelOpen) {
+    state.wheelOpen = false;
+    wheelEl.classList.add('hidden');
+    const dx = (state.mouseX || window.innerWidth / 2) - window.innerWidth / 2;
+    if (weapons.switchTo(dx < 0 ? 0 : 1)) showToast(`Weapon: ${weapons.current().name}`);
+  }
 });
+
+let mouseHeld = false;
+let downX = 0;
+let downY = 0;
+let downTime = 0;
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
   dragging = true;
   lastPX = e.clientX;
   lastPY = e.clientY;
+  downX = e.clientX;
+  downY = e.clientY;
+  downTime = performance.now();
+  if (e.button === 2) state.aiming = true;
+  else if (e.button === 0) mouseHeld = true;
 });
 window.addEventListener('pointermove', (e) => {
+  state.mouseX = e.clientX;
+  state.mouseY = e.clientY;
   if (!dragging) return;
   state.camYaw -= (e.clientX - lastPX) * 0.005;
-  state.camPitch = Math.max(0.06, Math.min(1.15, state.camPitch + (e.clientY - lastPY) * 0.004));
+  // Aiming lets the pitch swing up so Ray can shoot at Air One.
+  const minPitch = state.aiming ? -1.2 : 0.06;
+  state.camPitch = Math.max(minPitch, Math.min(1.15, state.camPitch + (e.clientY - lastPY) * 0.004));
   lastPX = e.clientX;
   lastPY = e.clientY;
 });
-window.addEventListener('pointerup', () => {
+window.addEventListener('pointerup', (e) => {
   dragging = false;
+  if (e.button === 2) state.aiming = false;
+  if (e.button === 0) {
+    mouseHeld = false;
+    // A click (not a drag) fires the current weapon.
+    const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
+    if (moved < 6 && performance.now() - downTime < 600) tryShoot();
+  }
 });
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ---------------------------------------------------------------- car enter/exit
 function nearestCar(maxDist) {
   let best = null;
   let bestD = maxDist;
   cars.forEach((car, i) => {
+    if (car.parked) return; // stored in the garage: not on the street
     const d = Math.hypot(car.group.position.x - player.position.x, car.group.position.z - player.position.z);
     if (d < bestD) {
       bestD = d;
@@ -408,6 +569,87 @@ function nearestCar(maxDist) {
     }
   });
   return best;
+}
+
+// Fire the current weapon along the camera's forward direction. The
+// weapon manager lock-ons to the nearest target in the cone and reports
+// the hit; this function owns what a hit means in the world.
+function tryShoot() {
+  if (!state.started || state.paused || shot) return;
+  const origin = new THREE.Vector3();
+  if (state.inCar) {
+    const car = cars[state.carIndex];
+    origin.set(car.group.position.x, 1.4, car.group.position.z);
+  } else {
+    origin.set(player.position.x, player.position.y + 1.4, player.position.z);
+  }
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const targets = {
+    police: police.police.map((p) => ({ x: p.group.position.x, z: p.group.position.z })),
+    peds: traffic.peds.filter((p) => p.down <= 0)
+      .map((p) => ({ x: p.group.position.x, z: p.group.position.z })),
+    heli: heli.active && heli.position
+      ? { x: heli.position.x, y: heli.position.y, z: heli.position.z, active: true }
+      : null,
+  };
+  const res = weapons.fire(origin, dir, targets);
+  if (!res) return;
+  if (res.dry) {
+    showToast('SMG is dry — back to the pistol');
+    return;
+  }
+  if (!res.hit) return;
+  if (res.hit === 'police') {
+    const outcome = police.damagePolice(res.index, res.damage);
+    if (outcome === 'destroyed') {
+      addRespect(3);
+      showToast('Interceptor down! +3 respect');
+    }
+  } else if (res.hit === 'ped') {
+    const ped = traffic.peds.filter((p) => p.down <= 0)[res.index];
+    if (ped) {
+      traffic.knockDown(ped);
+      police.addWanted(1);
+      showToast('You shot a pedestrian — the cops are coming');
+    }
+  } else if (res.hit === 'heli') {
+    const outcome = heli.damage(res.damage);
+    if (outcome === 'falling') showToast('Air One is going down!');
+  }
+}
+
+// G at the beach garage: store the car Ray is driving, or take the last
+// stored car back out. Anywhere else, G does nothing.
+function tryGarage() {
+  const px = state.inCar ? cars[state.carIndex].group.position.x : player.position.x;
+  const pz = state.inCar ? cars[state.carIndex].group.position.z : player.position.z;
+  if (!garage.inZone(px, pz)) return;
+  if (state.inCar) {
+    const result = garage.store(state.carIndex);
+    if (!result) return;
+    showToast(result.msg);
+    if (result.ok) {
+      const car = cars[state.carIndex];
+      player.position.set(car.group.position.x + 2.4, 0, car.group.position.z);
+      state.yaw = car.yaw;
+      player.rotation.y = state.yaw;
+      state.inCar = false;
+      state.carIndex = -1;
+      player.visible = true;
+      sound.stopEngine();
+      sound.setRadioActive(false);
+      saveGame();
+    }
+  } else {
+    const car = garage.retrieve();
+    if (car) {
+      showToast('Car retrieved from the garage');
+      saveGame();
+    } else {
+      showToast('Garage is empty');
+    }
+  }
 }
 
 function tryEnterExitCar() {
@@ -437,8 +679,9 @@ function tryEnterExitCar() {
 
 function onMissionComplete(m) {
   state.cash += m.reward;
+  addRespect(10);
   sound.jingle();
-  showToast(`Mission complete — ${m.title} · +$${m.reward}`);
+  showToast(`Mission complete — ${m.title} · +$${m.reward} · +10 respect`);
   saveGame();
 }
 
@@ -446,12 +689,18 @@ function onMissionComplete(m) {
 // mission completion, or a failed escape job restarting.
 function onMissionStart(m) {
   if (!m) return;
-  if (m.kind === 'escape') {
-    // The Heat job starts hot: two stars, two Interceptors on Ray.
+  // Respect gate: a locked job waits until Ray earns enough respect.
+  if (!missions.beginCurrent(state.respect)) {
+    showToast(`Need ${m.respect} respect to start ${m.title}`);
+    return;
+  }
+  if (m.kind === 'escape' || m.kind === 'hotpickup') {
+    // The Heat job and the hot pickup both start hot: two stars, two
+    // Interceptors on Ray.
     police.anchor.x = player.position.x;
     police.anchor.z = player.position.z;
     police.setWanted(Math.max(police.wanted, 2));
-    showToast('The cops are on you — lose them!');
+    showToast(m.kind === 'escape' ? 'The cops are on you — lose them!' : 'The heat is on — pick him up!');
   }
 }
 
@@ -483,9 +732,11 @@ function tryPunch() {
 function onBusted() {
   const failed = missions.failCurrent();
   state.cash = Math.max(0, state.cash - police.fine);
+  addRespect(-15);
   police.clearWanted();
   sound.busted();
   sound.stopEngine();
+  sound.setRadioActive(false);
   if (state.inCar) {
     state.inCar = false;
     state.carIndex = -1;
@@ -512,8 +763,12 @@ function startGame(save) {
     player.position.set(city.spawnPoint.x, 0, city.spawnPoint.z);
     state.yaw = city.spawnPoint.yaw;
     state.cash = 250;
+    state.respect = 0;
     police.clearWanted();
     missions.restore({ index: 0, done: [], stage: 0 });
+    garage.reset();
+    weapons.restore({ index: 0, ammo: [-1, 270] });
+    sound.radioChannel = 0;
   }
   state.lastMissionIndex = missions.index;
   onMissionStart(missions.current());
@@ -556,7 +811,7 @@ function refreshStartScreen() {
   if (save) {
     btn.classList.remove('hidden');
     const done = save.mission && Array.isArray(save.mission.done) ? save.mission.done.length : 0;
-    info.textContent = `Saved game: $${(save.cash | 0).toLocaleString('en-US')} · ${done}/3 missions done`;
+    info.textContent = `Saved game: $${(save.cash | 0).toLocaleString('en-US')} · ${done}/${MISSIONS.length} missions done`;
   } else {
     btn.classList.add('hidden');
     info.textContent = '';
@@ -624,7 +879,7 @@ if (shot) {
 }
 
 // ---------------------------------------------------------------- per-frame updates
-function updatePlayer(dt) {
+function updatePlayer(dt, colliders) {
   const run = keys.ShiftLeft || keys.ShiftRight;
   const fwd = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
   const strafe = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
@@ -651,7 +906,7 @@ function updatePlayer(dt) {
     // The pier is walkable: past the sand, z may run out to the pier end.
     const onPier = Math.abs(player.position.x) < 5.5;
     nz = Math.max(-164, Math.min(onPier ? 262 : 196, nz));
-    const solved = resolveCircleCollision(nx, nz, 0.6, city.colliders);
+    const solved = resolveCircleCollision(nx, nz, 0.6, colliders);
     player.position.x = solved.x;
     player.position.z = solved.z;
     state.walkPhase += speed * dt * 1.9;
@@ -689,13 +944,13 @@ function updatePlayer(dt) {
   state.moveSpeed = len > 0.01 ? speed : 0;
 }
 
-function updateCar(dt) {
+function updateCar(dt, colliders) {
   const car = cars[state.carIndex];
   const input = {
     forward: (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0),
     steer: (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0),
   };
-  driveCar(car, input, dt, city.colliders);
+  driveCar(car, input, dt, colliders);
   sound.setEngine(Math.abs(car.speed) / 27, input.forward !== 0 ? 1 : 0);
   state.moveSpeed = Math.abs(car.speed);
   // Camera eases behind the car.
@@ -759,6 +1014,19 @@ function updateCamera(dt) {
   const tx = target.x;
   const ty = target.y + (state.inCar ? 1.6 : 1.7);
   const tz = target.z;
+  if (state.aiming) {
+    // Over-shoulder aim: the camera sits close and looks along the
+    // view direction, so a negative pitch actually aims up at Air One.
+    const v = new THREE.Vector3(
+      Math.sin(state.camYaw) * cp,
+      -sp,
+      Math.cos(state.camYaw) * cp,
+    );
+    const eye = new THREE.Vector3(tx - v.x * 5, Math.max(1.0, ty - v.y * 5), tz - v.z * 5);
+    camera.position.copy(eye);
+    camera.lookAt(eye.x + v.x * 12, eye.y + v.y * 12, eye.z + v.z * 12);
+    return;
+  }
   // Direction from the target out to where the camera wants to be.
   const ox = -Math.sin(state.camYaw) * cp * dist;
   const oy = sp * dist + height * 0.4;
@@ -793,8 +1061,12 @@ function animate() {
   if (!state.paused) state.time += dt;
   try {
     if (state.started && !state.paused) {
-      if (state.inCar) updateCar(dt);
-      else updatePlayer(dt);
+      // Roadblock barricades count as solid for driving and walking.
+      const colliders = police.blockColliders.length > 0
+        ? city.colliders.concat(police.blockColliders)
+        : city.colliders;
+      if (state.inCar) updateCar(dt, colliders);
+      else updatePlayer(dt, colliders);
       const px = state.inCar ? cars[state.carIndex].group.position.x : player.position.x;
       const pz = state.inCar ? cars[state.carIndex].group.position.z : player.position.z;
       // Mission progress (frozen in screenshot scenes for a stable frame).
@@ -810,12 +1082,51 @@ function animate() {
           state.lastMissionIndex = missions.index;
           onMissionStart(missions.current());
         }
+        // Respect-gated jobs unlock the moment Ray earns enough respect.
+        if (missions.locked && missions.tryUnlock(state.respect)) {
+          showToast(`${missions.current().title} unlocked — respect ${state.respect}`);
+          onMissionStart(missions.current());
+        }
+        // Timed, chase, sabotage and heist progress lives here.
+        const prog = missions.updateMission(dt, { px, pz, inCar: state.inCar });
+        if (prog) {
+          if (prog.completed) onMissionComplete(prog.completed);
+          else if (prog.failed) {
+            showToast('Too slow — the drop failed. Try again!');
+            missions.retryCurrent();
+          }
+        }
+        // One-shot side effects: the heist grab brings the heat, the
+        // sabotage trips an alarm.
+        const ev = missions.takeStageEvent();
+        if (ev) {
+          if (ev.type === 'heist-grab') {
+            police.anchor.x = px;
+            police.anchor.z = pz;
+            police.setWanted(4);
+            showToast('Cash grabbed — Air One is inbound!');
+          } else if (ev.type === 'sabotage-done') {
+            police.addWanted(1);
+          }
+        }
       }
       missions.updateBeacon(cars.map((c) => ({ x: c.group.position.x, z: c.group.position.z })), px, pz);
       missions.update(state.time);
       traffic.update(dt, state.time, state.inCar
         ? { x: cars[state.carIndex].group.position.x, z: cars[state.carIndex].group.position.z }
         : null);
+      // Air One: overhead from 4 stars, keeping the heat on.
+      police.heliActive = heli.active;
+      const heliDown = heli.update(dt, px, pz, police.wanted);
+      if (heliDown === 'down') {
+        addRespect(10);
+        showToast('Air One is down! +10 respect');
+      }
+      // Holding the mouse down keeps an automatic weapon firing.
+      if (mouseHeld) tryShoot();
+      weapons.update(dt);
+      // The radio only plays in the car.
+      sound.setRadioActive(state.inCar);
       // Wanted: collisions with traffic and pedestrians, then the police.
       if (state.inCar) {
         const car = cars[state.carIndex];
@@ -865,9 +1176,17 @@ function animate() {
         playerSpeed: state.moveSpeed,
         inCar: state.inCar,
         playerCar: state.inCar ? cars[state.carIndex] : null,
-        colliders: city.colliders,
+        colliders,
+        heading: state.inCar ? cars[state.carIndex].yaw : state.yaw,
       });
       if (bust === 'busted') onBusted();
+      else if (state.prevWanted >= 2 && police.wanted === 0) {
+        // The heat cooled off on its own: Ray laid low, and the
+        // streets noticed.
+        addRespect(2);
+        showToast('You laid low — +2 respect');
+      }
+      state.prevWanted = police.wanted;
       state.saveTimer += dt;
       if (state.saveTimer > 20) {
         state.saveTimer = 0;
@@ -902,6 +1221,11 @@ window.__vp = {
   cars,
   player,
   scene,
+  city,
+  sound,
+  weapons,
+  heli,
+  garage,
   THREE,
   teleport(x, z) {
     player.position.set(x, 0, z);
@@ -949,5 +1273,23 @@ window.__vp = {
   },
   setShot(name) {
     applyShot(name);
+  },
+  // Aim the chase camera at a world point (shooting tests).
+  aimAt(x, z) {
+    const ox = state.inCar ? cars[state.carIndex].group.position.x : player.position.x;
+    const oz = state.inCar ? cars[state.carIndex].group.position.z : player.position.z;
+    state.camYaw = Math.atan2(x - ox, z - oz);
+  },
+  setAim(on) {
+    state.aiming = on;
+  },
+  setPitch(v) {
+    state.camPitch = v;
+  },
+  shoot() {
+    tryShoot();
+  },
+  setRespect(n) {
+    state.respect = n;
   },
 };

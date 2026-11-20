@@ -1,8 +1,9 @@
 // Vice Point — the procedural city. One seeded generator builds the whole
 // of Vice Point the same way every run: a 6x6 grid of blocks with around a
 // hundred low-poly buildings, 48 palm trees, neon signs, a beach, a pier and
-// the sea. Nothing here is loaded from a file; the windows, road markings
-// and neon are drawn on canvas textures at build time.
+// the sea. Nothing here is loaded from a file; the windows, road markings,
+// neon, concrete, sand, sea and sidewalks are all drawn on canvas textures
+// at build time — no surface in the city is a flat slab of colour.
 
 import * as THREE from 'three';
 
@@ -64,6 +65,27 @@ function makeRoadTexture() {
   const g = canvas.getContext('2d');
   g.fillStyle = '#33363b';
   g.fillRect(0, 0, 64, 256);
+  // Asphalt grain: speckles so the road is never a flat slab of colour.
+  for (let i = 0; i < 700; i++) {
+    const v = Math.random();
+    g.fillStyle = v < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.12)';
+    g.fillRect(Math.random() * 64, Math.random() * 256, 1.4, 1.4);
+  }
+  // A hairline crack or two per tile.
+  g.strokeStyle = 'rgba(0,0,0,0.35)';
+  g.lineWidth = 1;
+  for (let c = 0; c < 2; c++) {
+    g.beginPath();
+    let x = Math.random() * 64;
+    let y = Math.random() * 256;
+    g.moveTo(x, y);
+    for (let s = 0; s < 5; s++) {
+      x += (Math.random() - 0.5) * 14;
+      y += Math.random() * 22;
+      g.lineTo(x, y);
+    }
+    g.stroke();
+  }
   g.fillStyle = '#c9a13b';
   g.fillRect(30, 16, 4, 48);
   g.fillRect(30, 144, 4, 48);
@@ -73,6 +95,130 @@ function makeRoadTexture() {
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Concrete base for the whole city: grey with grain and faint cracks.
+function makeGroundTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#8f9296';
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 4200; i++) {
+    const v = Math.random();
+    g.fillStyle = v < 0.5 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.09)';
+    g.fillRect(Math.random() * 256, Math.random() * 256, 1.6, 1.6);
+  }
+  g.strokeStyle = 'rgba(0,0,0,0.16)';
+  g.lineWidth = 1;
+  for (let c = 0; c < 5; c++) {
+    g.beginPath();
+    let x = Math.random() * 256;
+    let y = Math.random() * 256;
+    g.moveTo(x, y);
+    for (let s = 0; s < 6; s++) {
+      x += (Math.random() - 0.5) * 40;
+      y += (Math.random() - 0.5) * 40;
+      g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(28, 28);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Beach sand: warm base, speckles, the odd shell fleck.
+function makeSandTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#e8d5a3';
+  g.fillRect(0, 0, 256, 256);
+  const dots = ['#d9c48f', '#f4e8c0', '#c9b078', '#e2d09a'];
+  for (let i = 0; i < 2600; i++) {
+    g.fillStyle = dots[Math.floor(Math.random() * dots.length)];
+    g.globalAlpha = 0.35 + Math.random() * 0.4;
+    const r = 0.8 + Math.random() * 1.6;
+    g.beginPath();
+    g.arc(Math.random() * 256, Math.random() * 256, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(24, 2);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Sea: deep blue with pale wave streaks running along the shore.
+function makeSeaTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#1e7fa8';
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 46; i++) {
+    g.strokeStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.10)' : 'rgba(120,200,230,0.12)';
+    g.lineWidth = 1 + Math.random() * 2;
+    const y = Math.random() * 256;
+    g.beginPath();
+    g.moveTo(0, y);
+    for (let x = 0; x <= 256; x += 32) {
+      g.lineTo(x, y + Math.sin(x * 0.05 + i) * 4 + (Math.random() - 0.5) * 3);
+    }
+    g.stroke();
+  }
+  for (let i = 0; i < 500; i++) {
+    g.fillStyle = 'rgba(255,255,255,0.05)';
+    g.fillRect(Math.random() * 256, Math.random() * 256, 1.5, 1.5);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(12, 6);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Sidewalk pavers: a grid of slabs with grain, instead of flat beige.
+function makeSidewalkTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#b9b3a4';
+  g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 900; i++) {
+    g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)';
+    g.fillRect(Math.random() * 128, Math.random() * 128, 1.5, 1.5);
+  }
+  g.strokeStyle = 'rgba(0,0,0,0.22)';
+  g.lineWidth = 2;
+  for (let i = 0; i <= 4; i++) {
+    g.beginPath();
+    g.moveTo(i * 32, 0);
+    g.lineTo(i * 32, 128);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(0, i * 32);
+    g.lineTo(128, i * 32);
+    g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
@@ -144,8 +290,9 @@ export function buildCity(scene) {
   // --- ground: concrete base, roads, sidewalks ---
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(760, 760),
-    new THREE.MeshLambertMaterial({ color: 0x8f9296 }),
+    new THREE.MeshLambertMaterial({ map: makeGroundTexture() }),
   );
+  ground.name = 'ground';
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0, 0, 40);
   ground.receiveShadow = true;
@@ -163,6 +310,7 @@ export function buildCity(scene) {
         new THREE.PlaneGeometry(STREET, 330),
         new THREE.MeshLambertMaterial({ map: tex }),
       );
+      road.name = 'road';
       road.rotation.x = -Math.PI / 2;
       if (!vertical) road.rotation.z = Math.PI / 2;
       road.position.set(vertical ? c : 0, 0.02, vertical ? 0 : c);
@@ -190,16 +338,18 @@ export function buildCity(scene) {
   // --- beach + sea ---
   const sand = new THREE.Mesh(
     new THREE.PlaneGeometry(760, 52),
-    new THREE.MeshLambertMaterial({ color: 0xe8d5a3 }),
+    new THREE.MeshLambertMaterial({ map: makeSandTexture() }),
   );
+  sand.name = 'sand';
   sand.rotation.x = -Math.PI / 2;
   sand.position.set(0, 0.03, 178);
   sand.receiveShadow = true;
   scene.add(sand);
   const sea = new THREE.Mesh(
     new THREE.PlaneGeometry(760, 340),
-    new THREE.MeshLambertMaterial({ color: 0x1e7fa8, transparent: true, opacity: 0.94 }),
+    new THREE.MeshLambertMaterial({ map: makeSeaTexture(), transparent: true, opacity: 0.94 }),
   );
+  sea.name = 'sea';
   sea.rotation.x = -Math.PI / 2;
   sea.position.set(0, 0.01, 374);
   scene.add(sea);
@@ -232,7 +382,7 @@ export function buildCity(scene) {
 
   // --- sidewalks + buildings, block by block ---
   const windowTex = makeWindowTexture(rand);
-  const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0xb9b3a4 });
+  const sidewalkMat = new THREE.MeshLambertMaterial({ map: makeSidewalkTexture() });
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
   let buildingCount = 0;
   for (let i = 0; i < GRID; i++) {
