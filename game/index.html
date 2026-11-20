@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Vice Point — Open-World Crime Game</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0b1c2c;
+    font-family: "Trebuchet MS", "Segoe UI", Verdana, sans-serif; color: #fff; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; }
+  .hidden { display: none !important; }
+
+  /* ---- HUD ---- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  #cashBox { position: absolute; top: 14px; left: 16px; background: rgba(8, 20, 32, .62);
+    border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px; padding: 8px 14px;
+    font-size: 20px; font-weight: bold; letter-spacing: .5px; text-shadow: 0 1px 2px #000; }
+  #cashBox small { display: block; font-size: 11px; font-weight: normal; opacity: .75; letter-spacing: 2px; }
+  #missionBox { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    background: rgba(8, 20, 32, .62); border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: 10px; padding: 8px 16px; text-align: center; max-width: 46vw; }
+  #missionTitle { font-size: 13px; font-weight: bold; color: #ffd166; letter-spacing: 1px; }
+  #missionText { font-size: 14px; margin-top: 2px; text-shadow: 0 1px 2px #000; }
+  #missionDist { font-size: 11px; opacity: .8; margin-top: 1px; }
+  #minimapWrap { position: absolute; top: 14px; right: 16px; width: 184px; height: 184px;
+    border-radius: 50%; overflow: hidden; border: 3px solid rgba(255, 255, 255, .55);
+    box-shadow: 0 0 0 3px rgba(8, 20, 32, .55), 0 4px 18px rgba(0, 0, 0, .5); background: #12283a; }
+  #minimap { width: 100%; height: 100%; display: block; }
+  #speedBox { position: absolute; right: 18px; bottom: 16px; text-align: right;
+    font-size: 30px; font-weight: bold; text-shadow: 0 2px 4px #000; }
+  #speedBox small { display: block; font-size: 11px; letter-spacing: 2px; opacity: .8; }
+  #hintBox { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    background: rgba(8, 20, 32, .6); border-radius: 8px; padding: 6px 14px;
+    font-size: 13px; letter-spacing: .4px; text-shadow: 0 1px 2px #000; }
+  #toast { position: absolute; left: 50%; top: 22%; transform: translateX(-50%);
+    background: rgba(8, 20, 32, .78); border: 1px solid #ffd166; border-radius: 10px;
+    padding: 10px 22px; font-size: 17px; font-weight: bold; color: #ffd166;
+    text-shadow: 0 1px 2px #000; opacity: 0; transition: opacity .3s; white-space: nowrap; }
+  #toast.show { opacity: 1; }
+
+  /* ---- Screens ---- */
+  .screen { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(160deg, rgba(10, 26, 44, .88), rgba(46, 12, 54, .82)); }
+  .panel { text-align: center; max-width: 560px; padding: 28px 34px; }
+  .logo { font-size: 64px; font-weight: 900; letter-spacing: 6px; line-height: 1;
+    background: linear-gradient(90deg, #ff5da2, #ffd166 55%, #37e0c8);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 34px rgba(255, 93, 162, .25); }
+  .tagline { margin-top: 6px; font-size: 15px; letter-spacing: 3px; opacity: .9; text-transform: uppercase; }
+  .story { margin: 18px auto 4px; font-size: 15px; line-height: 1.55; opacity: .92; max-width: 480px; }
+  .menuBtn { pointer-events: auto; display: block; margin: 12px auto 0; min-width: 260px;
+    padding: 12px 20px; font-size: 17px; font-weight: bold; letter-spacing: 1px; color: #081420;
+    background: linear-gradient(90deg, #ffd166, #ff9a5c); border: none; border-radius: 10px; cursor: pointer; }
+  .menuBtn:hover { filter: brightness(1.08); }
+  .menuBtn.secondary { background: rgba(255, 255, 255, .14); color: #fff; border: 1px solid rgba(255,255,255,.4); }
+  .saveInfo { margin-top: 10px; font-size: 13px; opacity: .75; }
+  .controls { margin-top: 20px; font-size: 13px; line-height: 1.9; opacity: .85; }
+  .controls b { color: #ffd166; }
+  .foot { margin-top: 16px; font-size: 11px; opacity: .55; letter-spacing: 1px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud" class="hidden">
+  <div id="cashBox">$<span id="cashValue">0</span><small>VICE POINT</small></div>
+  <div id="missionBox">
+    <div id="missionTitle">MISSION</div>
+    <div id="missionText"></div>
+    <div id="missionDist"></div>
+  </div>
+  <div id="minimapWrap"><canvas id="minimap" width="368" height="368"></canvas></div>
+  <div id="speedBox" class="hidden"><span id="speedValue">0</span><small>MPH</small></div>
+  <div id="hintBox">WASD move &nbsp;·&nbsp; drag mouse to look &nbsp;·&nbsp; SHIFT run &nbsp;·&nbsp; SPACE jump &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; M mute</div>
+  <div id="toast"></div>
+</div>
+
+<div id="startScreen" class="screen">
+  <div class="panel">
+    <div class="logo">VICE POINT</div>
+    <div class="tagline">Sun · Sea · Streets · Cash</div>
+    <p class="story">Ray Delgado is back in Vice Point with an empty wallet and a
+    reputation to rebuild. Borrow cars, run jobs across the city, and stack
+    cash — the streets remember who shows up.</p>
+    <button id="btnNew" class="menuBtn">NEW GAME</button>
+    <button id="btnContinue" class="menuBtn secondary hidden">CONTINUE</button>
+    <div id="saveInfo" class="saveInfo"></div>
+    <div class="controls">
+      <b>WASD</b> walk / drive &nbsp;·&nbsp; <b>Mouse drag</b> look &nbsp;·&nbsp; <b>SHIFT</b> run<br>
+      <b>SPACE</b> jump &nbsp;·&nbsp; <b>E</b> enter / exit car &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>ESC</b> pause
+    </div>
+    <div class="foot">VICE POINT — AN ORIGINAL OPEN-WORLD GAME · PLAYS OFFLINE</div>
+  </div>
+</div>
+
+<div id="pauseScreen" class="screen hidden">
+  <div class="panel">
+    <div class="logo" style="font-size:44px">PAUSED</div>
+    <p class="story">The city waits for nobody — except right now.</p>
+    <button id="btnResume" class="menuBtn">RESUME</button>
+    <button id="btnQuit" class="menuBtn secondary">SAVE &amp; QUIT TO TITLE</button>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
