@@ -245,9 +245,9 @@ export function buildCity(scene) {
       walk.receiveShadow = true;
       scene.add(walk);
 
-      // 1-3 buildings per block, in 2x2 slots, so ~100 in total.
+      // 2-4 buildings per block, in 2x2 slots, so ~100 in total.
       const slots = [[-9, -9], [9, -9], [-9, 9], [9, 9]];
-      const n = 1 + Math.floor(rand() * 3);
+      const n = 2 + Math.floor(rand() * 3);
       for (let s = 0; s < n; s++) {
         const slot = slots.splice(Math.floor(rand() * slots.length), 1)[0];
         const w = 11 + rand() * 6;
@@ -334,15 +334,15 @@ export function buildCity(scene) {
   }
 
   // --- neon signs, pinned to real building faces so none of them floats ---
-  // VICE goes on the tallest building of downtown's southernmost row
-  // (z in 0..50), fronting the main north-south avenue, low enough to read
-  // from the street, so it faces the spawn instead of hiding behind the
-  // skyline.
+  // VICE goes on the tallest building of the city's southernmost row's
+  // FRONT rank (z in 130..150), facing the beach: nothing stands south of
+  // that rank, so the sightline from the sand is clear. It sits low so the
+  // chase camera (which looks down) keeps it inside the frame.
   const tallestDowntown = buildings
-    .filter((b) => Math.abs(b.x) <= 25 && b.z >= 0 && b.z <= 50)
+    .filter((b) => Math.abs(b.x) <= 25 && b.z >= 130 && b.z <= 150)
     .sort((a, b) => b.h - a.h)[0];
-  addNeon(scene, 'VICE', '#ff5da2', tallestDowntown.x, Math.min(tallestDowntown.h * 0.4, 14),
-    tallestDowntown.z + tallestDowntown.d / 2 + 0.4, 0, 1.6);
+  addNeon(scene, 'VICE', '#ff5da2', tallestDowntown.x, Math.min(tallestDowntown.h * 0.35, 6),
+    tallestDowntown.z + tallestDowntown.d / 2 + 0.4, 0, 1.0);
   const tallestWest = buildings
     .filter((b) => b.x < -60 && b.h >= 12)
     .sort((a, b) => b.h - a.h)[0];

@@ -468,17 +468,16 @@ function applyShot(name) {
   $('startScreen').classList.add('hidden');
   hud.classList.remove('hidden');
   if (name === 'cover') {
-    // On the avenue at the spawn, far enough back that the VICE sign sits
-    // inside the frame (the chase camera looks down, so a close sign would
-    // be above the top edge); standing east so the whole sign clears the
-    // blue building on the west side. Red car and beacon ahead.
-    player.position.set(22, 0, 98);
+    // From the sand looking north: the VICE sign on the front-rank
+    // southern building ahead (clear sightline over the sand), red car and
+    // beacon on the road beyond it.
+    player.position.set(0, 0, 170);
     state.yaw = Math.PI;
     player.rotation.y = state.yaw;
     state.camYaw = Math.PI;
     state.camPitch = 0.12;
     const coverCar = cars[0];
-    coverCar.group.position.set(8, 0, 55);
+    coverCar.group.position.set(8, 0, 150);
     coverCar.group.rotation.y = Math.PI;
     coverCar.yaw = Math.PI;
   } else if (name === 'drive') {
