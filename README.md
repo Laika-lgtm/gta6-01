@@ -1,8 +1,8 @@
 # Vice Point
 
-![Vice Point](https://make.fun/badge/gta6-01.svg)
-![Rank](https://make.fun/badge/gta6-01/Laika-lgtm/gta6-01/rank.svg)
-![Reward](https://make.fun/badge/gta6-01/Laika-lgtm/gta6-01/reward.svg)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/Laika-lgtm/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/Laika-lgtm/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
 An open-world crime game in the spirit of GTA 6, running offline in a desktop
 browser from static files. Explore the sun-soaked coastal city of Vice Point
@@ -103,5 +103,6 @@ sea, sidewalks and asphalt are all canvas-generated textures.
 mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 ```
 
-Built for the make.fun `gta6-01` competition. All city, characters, vehicles,
-names, story, art and sound are original.
+Built for the make.fun `gta6-01` competition — see
+https://make.fun/bounty/gta6-01 (referral code: `w2e3vyyb`). All city,
+characters, vehicles, names, story, art and sound are original.
