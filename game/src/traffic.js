@@ -10,13 +10,20 @@ import { mulberry32, blockCenter, GRID } from './city.js';
 const TRAFFIC_COLORS = [0x8a94a0, 0x3f6fb5, 0xc9c2b4, 0x5a7a52, 0xb5533c];
 
 // Rectangular loops on the street centrelines: each loop is a ring of
-// intersections around one or two blocks.
+// intersections around one or two blocks. Ten loops, one car each, so the
+// streets stay busy without two cars ever starting on top of each other
+// (each car starts at a different waypoint of its loop).
 const LOOPS = [
   [[-100, -100], [100, -100], [100, -50], [-100, -50]],
   [[-50, 0], [50, 0], [50, 50], [-50, 50]],
   [[-100, 50], [0, 50], [0, 100], [-100, 100]],
   [[0, -100], [100, -100], [100, 0], [0, 0]],
   [[-50, -50], [-50, 50], [0, 50], [0, -50]],
+  [[-100, -50], [100, -50], [100, 0], [-100, 0]],
+  [[-50, -100], [-50, 100], [0, 100], [0, -100]],
+  [[50, -100], [50, 100], [100, 100], [100, -100]],
+  [[-100, -100], [-100, 100], [-50, 100], [-50, -100]],
+  [[0, -50], [0, 100], [50, 100], [50, -50]],
 ];
 
 function makePedestrian(rand) {
@@ -66,20 +73,25 @@ export function createTraffic(scene) {
   const rand = mulberry32(777);
   const cars = LOOPS.map((loop, i) => {
     const group = makeCar(TRAFFIC_COLORS[i % TRAFFIC_COLORS.length]);
-    const start = loop[0];
+    // Spread the cars around their loops so no two start together.
+    const startIdx = i % loop.length;
+    const start = loop[startIdx];
     group.position.set(start[0], 0, start[1]);
     scene.add(group);
     return {
       group,
-      speed: 6.5 + rand() * 2.5,
+      cruise: 6.5 + rand() * 2.5,
+      speed: 0,
       loop,
-      wp: 1,
+      wp: (startIdx + 1) % loop.length,
       yaw: 0,
+      wait: 0,
+      stopped: false,
     };
   });
 
   const peds = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 14; i++) {
     const ped = makePedestrian(rand);
     const spot = randomSidewalkPoint(rand);
     ped.position.set(spot.x, 0, spot.z);
@@ -89,17 +101,53 @@ export function createTraffic(scene) {
       speed: 1.1 + rand() * 0.7,
       target: randomSidewalkPoint(rand),
       phase: rand() * Math.PI * 2,
+      down: 0, // >0 while knocked down: lying flat, then gets back up elsewhere
     });
   }
 
-  function update(dt, time) {
+  // The nearest pedestrian still on their feet, within maxD of (x, z).
+  function nearestPed(x, z, maxD) {
+    let best = null;
+    let bestD = maxD;
+    for (const ped of peds) {
+      if (ped.down > 0) continue;
+      const d = Math.hypot(ped.group.position.x - x, ped.group.position.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = ped;
+      }
+    }
+    return best;
+  }
+
+  // Knock a pedestrian flat: they lie down for a few seconds, then get up
+  // at a fresh sidewalk spot. The game loop adds the wanted level.
+  function knockDown(ped) {
+    if (!ped || ped.down > 0) return;
+    ped.down = 8;
+    ped.group.rotation.x = -Math.PI / 2;
+    ped.group.position.y = 0.3;
+  }
+
+  // `playerCar` is { x, z } of the player's car, or null when on foot:
+  // traffic brakes for it just like for a car ahead, so nobody rear-ends
+  // the player while they sit at a light.
+  function update(dt, time, playerCar) {
     for (const car of cars) {
+      if (car.wait > 0) {
+        car.wait -= dt;
+        car.stopped = true;
+        continue;
+      }
+      car.stopped = false;
       const [tx, tz] = car.loop[car.wp];
       const dx = tx - car.group.position.x;
       const dz = tz - car.group.position.z;
       const dist = Math.hypot(dx, dz);
       if (dist < 4) {
         car.wp = (car.wp + 1) % car.loop.length;
+        // One in three intersections, wait out a red light for a bit.
+        if (rand() < 0.33) car.wait = 1.5 + rand() * 2;
         continue;
       }
       const desired = Math.atan2(dx, dz);
@@ -109,6 +157,30 @@ export function createTraffic(scene) {
       const turn = Math.max(-1.4 * dt, Math.min(1.4 * dt, diff));
       car.yaw += turn;
       car.group.rotation.y = car.yaw;
+      // Simple collision avoidance: brake when anything is stopped or
+      // crawling right ahead — another traffic car, or the player's car.
+      let blocked = false;
+      const fx = Math.sin(car.yaw);
+      const fz = Math.cos(car.yaw);
+      for (const other of cars) {
+        if (other === car) continue;
+        const ox = other.group.position.x - car.group.position.x;
+        const oz = other.group.position.z - car.group.position.z;
+        const od = Math.hypot(ox, oz);
+        if (od < 9 && od > 0.01 && (ox * fx + oz * fz) / od > 0.7) {
+          blocked = true;
+          break;
+        }
+      }
+      if (!blocked && playerCar) {
+        const ox = playerCar.x - car.group.position.x;
+        const oz = playerCar.z - car.group.position.z;
+        const od = Math.hypot(ox, oz);
+        if (od < 9 && od > 0.01 && (ox * fx + oz * fz) / od > 0.7) blocked = true;
+      }
+      const targetSpeed = blocked ? 0 : car.cruise;
+      const accel = targetSpeed > car.speed ? 7 : 14;
+      car.speed += Math.max(-accel * dt, Math.min(accel * dt, targetSpeed - car.speed));
       car.group.position.x += Math.sin(car.yaw) * car.speed * dt;
       car.group.position.z += Math.cos(car.yaw) * car.speed * dt;
       const wheels = car.group.userData.wheels;
@@ -116,6 +188,17 @@ export function createTraffic(scene) {
       for (const w of wheels) w.rotation.x += spin;
     }
     for (const ped of peds) {
+      if (ped.down > 0) {
+        ped.down -= dt;
+        if (ped.down <= 0) {
+          ped.down = 0;
+          ped.group.rotation.x = 0;
+          const spot = randomSidewalkPoint(rand);
+          ped.group.position.set(spot.x, 0, spot.z);
+          ped.target = randomSidewalkPoint(rand);
+        }
+        continue;
+      }
       const dx = ped.target.x - ped.group.position.x;
       const dz = ped.target.z - ped.group.position.z;
       const dist = Math.hypot(dx, dz);
@@ -134,5 +217,5 @@ export function createTraffic(scene) {
     }
   }
 
-  return { cars, peds, update };
+  return { cars, peds, update, nearestPed, knockDown };
 }

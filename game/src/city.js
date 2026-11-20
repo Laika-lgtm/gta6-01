@@ -374,8 +374,15 @@ export function buildCity(scene) {
 
   return {
     colliders,
+    // Full 3D building boxes, for the chase camera's anti-clip raycast:
+    // the 2D colliders alone cannot tell a low roof from a tower.
+    buildings,
     buildingCount,
     spawnPoint: { x: 6, z: 96, yaw: Math.PI },
+    // Drop-off for the Mara Voss pickup: on the street outside the HOTEL
+    // sign's west face, so the marker sits in front of the hotel itself.
+    // The face plus 9 m always lands in the street strip between blocks.
+    hotelSpot: { x: tallestEast.x - tallestEast.w / 2 - 9, z: tallestEast.z },
     carSpots: [
       { x: 8, z: 60, yaw: Math.PI, color: 0xd83a2e },
       { x: -8, z: -40, yaw: 0, color: 0xf2b705 },

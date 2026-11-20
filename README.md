@@ -11,8 +11,11 @@ breathe — traffic on the avenues, pedestrians on the sidewalks, neon over the
 boulevard, and the sea at the end of every street.
 
 You are **Ray Delgado**, a driver-for-hire who just got back to Vice Point
-with an empty wallet and a reputation to rebuild. Take jobs, earn cash, and
-own the streets — one mission at a time.
+with $250 in his pocket and a reputation to rebuild. Take jobs for Mara
+Voss — pick her up, lose the cops, grab the getaway car — earn cash, and
+own the streets, one mission at a time. Mind the wanted level: hit cars
+and pedestrians and the Interceptors come for you. Get busted and it costs
+$100 plus the job, if the job was Heat.
 
 ## Play
 
@@ -32,6 +35,7 @@ No build step, no network request while playing. Keyboard and mouse.
 | Shift | Run |
 | Space | Jump |
 | E | Enter / exit a car |
+| F | Punch (on foot) |
 | M | Mute sound |
 | Esc | Pause menu |
 
@@ -43,7 +47,10 @@ so you can pick up where you left off with **Continue** on the start screen.
 Vice Point is a procedural low-poly coastal city: a 6×6 grid of blocks with
 around a hundred buildings, 48 palm trees, neon signs (VICE, TACOS, HOTEL,
 PIER 9), a beach, a pier and the open sea. Six cars wait on the streets to be
-borrowed. Traffic cruises the avenues and pedestrians wander the sidewalks.
+borrowed. Ten traffic cars cruise the avenues — stopping at intersections and
+braking for the car ahead — and fourteen pedestrians wander the sidewalks.
+Police Interceptors chase Ray when the wanted level rises, and the chase
+camera never clips through a building.
 
 ## Files
 
@@ -51,8 +58,9 @@ borrowed. Traffic cruises the avenues and pedestrians wander the sidewalks.
 - `game/src/main.js` — game loop, player, cars, camera, HUD, minimap, save
 - `game/src/city.js` — procedural city, beach, pier, neon, palms
 - `game/src/traffic.js` — traffic cars and pedestrians
-- `game/src/missions.js` — mission chain and objective markers
-- `game/src/audio.js` — procedural WebAudio sound (engine, steps, UI)
+- `game/src/missions.js` — the Mara Voss chain and objective markers
+- `game/src/police.js` — wanted level 0–5 and Interceptor pursuit, ramming, busts
+- `game/src/audio.js` — procedural WebAudio sound (engine, steps, UI, siren, punch)
 - `screenshots/` — renders of the game itself
 - `main.ts` — hands the entry in (copies `game/` + `screenshots/`, writes `dossier.json`)
 

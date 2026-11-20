@@ -15,6 +15,10 @@ export class SoundEngine {
     this.engineOn = false;
     this.wavesStarted = false;
     this.lastStep = 0;
+    this.sirenOsc = null;
+    this.sirenLfo = null;
+    this.sirenGain = null;
+    this.sirenOn = false;
   }
 
   // Must be called from a user gesture (the start button) so the browser
@@ -163,6 +167,87 @@ export class SoundEngine {
     gain.connect(this.master);
     osc.start(t);
     osc.stop(t + 0.16);
+  }
+
+  // --- police siren: a two-tone wail, an LFO swinging the pitch ---
+  startSiren() {
+    if (!this.ctx || this.sirenOn) return;
+    this.sirenOn = true;
+    const t = this.ctx.currentTime;
+    this.sirenOsc = this.ctx.createOscillator();
+    this.sirenOsc.type = 'triangle';
+    this.sirenOsc.frequency.value = 780;
+    this.sirenLfo = this.ctx.createOscillator();
+    this.sirenLfo.type = 'square';
+    this.sirenLfo.frequency.value = 0.55;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 190;
+    this.sirenLfo.connect(lfoGain);
+    lfoGain.connect(this.sirenOsc.frequency);
+    this.sirenGain = this.ctx.createGain();
+    this.sirenGain.gain.setValueAtTime(0, t);
+    this.sirenGain.gain.setTargetAtTime(0.045, t, 0.2);
+    this.sirenOsc.connect(this.sirenGain);
+    this.sirenGain.connect(this.master);
+    this.sirenOsc.start();
+    this.sirenLfo.start();
+  }
+
+  stopSiren() {
+    if (!this.ctx || !this.sirenOn) return;
+    this.sirenOn = false;
+    const t = this.ctx.currentTime;
+    this.sirenGain.gain.setTargetAtTime(0, t, 0.1);
+    const osc = this.sirenOsc;
+    const lfo = this.sirenLfo;
+    window.setTimeout(() => {
+      try { osc.stop(); lfo.stop(); } catch (_e) { /* already stopped */ }
+    }, 400);
+    this.sirenOsc = null;
+    this.sirenLfo = null;
+    this.sirenGain = null;
+  }
+
+  // --- punch: a short low thud of filtered noise ---
+  punch() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const dur = 0.12;
+    const buf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 320;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    src.start(t);
+  }
+
+  // --- busted: three descending notes, the fun is over ---
+  busted() {
+    if (!this.ctx) return;
+    const t0 = this.ctx.currentTime;
+    const notes = [440, 349.23, 261.63];
+    notes.forEach((freq, i) => {
+      const t = t0 + i * 0.16;
+      const osc = this.ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.16, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+      osc.connect(gain);
+      gain.connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.32);
+    });
   }
 
   // --- mission complete: a bright four-note arpeggio ---

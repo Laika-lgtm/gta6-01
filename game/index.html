@@ -18,6 +18,9 @@
     border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px; padding: 8px 14px;
     font-size: 20px; font-weight: bold; letter-spacing: .5px; text-shadow: 0 1px 2px #000; }
   #cashBox small { display: block; font-size: 11px; font-weight: normal; opacity: .75; letter-spacing: 2px; }
+  #wantedBox { position: absolute; top: 76px; left: 16px; font-size: 22px; letter-spacing: 3px;
+    color: #ffd166; text-shadow: 0 0 8px rgba(255, 209, 102, .7), 0 1px 2px #000; }
+  #wantedBox .off { color: rgba(255, 255, 255, .25); text-shadow: 0 1px 2px #000; }
   #missionBox { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
     background: rgba(8, 20, 32, .62); border: 1px solid rgba(255, 255, 255, .22);
     border-radius: 10px; padding: 8px 16px; text-align: center; max-width: 46vw; }
@@ -69,6 +72,7 @@
 
 <div id="hud" class="hidden">
   <div id="cashBox">$<span id="cashValue">0</span><small>VICE POINT</small></div>
+  <div id="wantedBox" title="Wanted level"></div>
   <div id="missionBox">
     <div id="missionTitle">MISSION</div>
     <div id="missionText"></div>
@@ -92,7 +96,7 @@
     <div id="saveInfo" class="saveInfo"></div>
     <div class="controls">
       <b>WASD</b> walk / drive &nbsp;·&nbsp; <b>Mouse drag</b> look &nbsp;·&nbsp; <b>SHIFT</b> run<br>
-      <b>SPACE</b> jump &nbsp;·&nbsp; <b>E</b> enter / exit car &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>ESC</b> pause
+      <b>SPACE</b> jump &nbsp;·&nbsp; <b>E</b> enter / exit car &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>ESC</b> pause
     </div>
     <div class="foot">VICE POINT — AN ORIGINAL OPEN-WORLD GAME · PLAYS OFFLINE</div>
   </div>
