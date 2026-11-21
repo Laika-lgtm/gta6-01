@@ -11,11 +11,15 @@
   #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
   #money { position: absolute; top: 14px; right: 18px; font-size: 26px; font-weight: 800; color: #7dff9e; }
   #stars { position: absolute; top: 48px; right: 18px; font-size: 24px; letter-spacing: 4px; color: #ffd23e; }
+  #respect { position: absolute; top: 84px; right: 18px; font-size: 14px; font-weight: 700; letter-spacing: 2px; color: #ff9ec7; }
+  #mission-timer { font-weight: 800; }
   #mission { position: absolute; top: 14px; left: 18px; max-width: 420px; font-size: 16px; line-height: 1.35; background: rgba(8,12,28,.55); padding: 10px 14px; border-left: 4px solid #ff4d8d; border-radius: 4px; }
   #mission b { color: #ffb3cd; }
   #speed { position: absolute; bottom: 16px; right: 20px; font-size: 15px; text-align: right; color: #dfe8ff; }
   #speed b { font-size: 30px; color: #fff; }
   #health { position: absolute; bottom: 18px; left: 18px; width: 220px; }
+  #weapon { position: absolute; bottom: 64px; left: 18px; font-size: 14px; font-weight: 700; letter-spacing: 1px; color: #ffe9a8; }
+  #radio { position: absolute; bottom: 86px; left: 18px; font-size: 13px; color: #9be8ff; }
   #health .label { font-size: 12px; letter-spacing: 2px; color: #cdd7ff; margin-bottom: 4px; }
   #health .bar { height: 10px; background: rgba(255,255,255,.25); border-radius: 5px; overflow: hidden; }
   #health .fill { height: 100%; width: 100%; background: #4ade80; }
@@ -39,9 +43,12 @@
 <body>
 <canvas id="game" aria-label="Vice Point: an open-world crime game. Walk the city, steal cars, outrun the police."></canvas>
 <div id="hud">
-  <div id="mission"><b>MISSION — THE PICKUP</b><br><span id="mission-text">Mara Voss: grab the package at Pier 9. Don't keep her waiting.</span></div>
+  <div id="mission"><b>MISSION — THE PICKUP</b> <span id="mission-timer"></span><br><span id="mission-text">Mara Voss: grab the package at Pier 9. Don't keep her waiting.</span></div>
   <div id="money">$<span id="money-value">250</span></div>
   <div id="stars" aria-label="Wanted level"></div>
+  <div id="respect"><span id="respect-value">RESPECT 0</span></div>
+  <div id="weapon"><span id="weapon-value">FISTS ∞ — Q SWITCH · F FIRE</span></div>
+  <div id="radio"><span id="radio-value"></span></div>
   <div id="health"><div class="label">HEALTH</div><div class="bar"><div class="fill" id="health-fill"></div></div></div>
   <div id="speed"><b id="speed-value">0</b> mph<br><span id="speed-label">ON FOOT</span></div>
   <div id="minimap"><canvas id="minimap-canvas" width="336" height="336"></canvas></div>
@@ -55,7 +62,7 @@
   <p>Walk the streets, steal a car with E, punch with F, and don't let the
   Vice Point police catch you doing it.</p>
   <button id="start-btn">START ENGINE</button>
-  <div class="keys">WASD walk &amp; drive &nbsp;·&nbsp; Mouse look &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; E enter / exit car &nbsp;·&nbsp; F punch &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M mute</div>
+  <div class="keys">WASD walk &amp; drive &nbsp;·&nbsp; Mouse look &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; E enter / exit car &nbsp;·&nbsp; F fire / punch &nbsp;·&nbsp; Q weapon &nbsp;·&nbsp; R radio &nbsp;·&nbsp; G garage &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M mute</div>
 </div>
 <p id="status" role="status" aria-live="polite"></p>
 <script type="module" src="./src/main.js"></script>

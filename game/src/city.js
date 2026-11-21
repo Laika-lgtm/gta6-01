@@ -3,7 +3,7 @@
 // neon signs reading VICE, TACOS, HOTEL and PIER 9. Colliders are simple
 // axis-aligned boxes so the player and cars can be kept out of walls.
 import * as THREE from 'three';
-import { CITY, PALETTE } from './config.js';
+import { CITY, GARAGE, PALETTE } from './config.js';
 import { createRandom, pick, range } from './random.js';
 
 const NEON_TEXTS = [
@@ -12,6 +12,66 @@ const NEON_TEXTS = [
   { text: 'HOTEL', color: PALETTE.neonCyan, size: 6 },
   { text: 'PIER 9', color: PALETTE.neonGreen, size: 6 },
 ];
+
+// Four procedural facade variants, painted on canvas — no image files.
+// 0: lit window grid, 1: horizontal sun-shade bands, 2: vertical fins
+// with balconies, 3: sparse windows over a strong ground-floor band. Each
+// building picks one by the seeded RNG, so the skyline stops repeating.
+function facadeTexture(variant, baseHex) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = `#${baseHex.toString(16).padStart(6, '0')}`;
+  ctx.fillRect(0, 0, 256, 256);
+  const windowLit = '#ffe9a8';
+  const windowDark = '#2a4a66';
+  if (variant === 0) {
+    for (let r = 0; r < 6; r += 1) {
+      for (let c = 0; c < 5; c += 1) {
+        const lit = (r * 5 + c) % 3 === 0;
+        ctx.fillStyle = lit ? windowLit : windowDark;
+        ctx.fillRect(14 + c * 48, 14 + r * 40, 30, 26);
+      }
+    }
+  } else if (variant === 1) {
+    for (let r = 0; r < 6; r += 1) {
+      ctx.fillStyle = r % 2 === 0 ? 'rgba(0,0,0,0.28)' : 'rgba(255,255,255,0.16)';
+      ctx.fillRect(0, r * 42, 256, 14);
+      for (let c = 0; c < 5; c += 1) {
+        ctx.fillStyle = (r + c) % 3 === 0 ? windowLit : windowDark;
+        ctx.fillRect(14 + c * 48, r * 42 + 18, 30, 18);
+      }
+    }
+  } else if (variant === 2) {
+    for (let c = 0; c < 5; c += 1) {
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(c * 51, 0, 8, 256);
+      for (let r = 0; r < 6; r += 1) {
+        ctx.fillStyle = (r + c) % 4 === 0 ? windowLit : windowDark;
+        ctx.fillRect(14 + c * 48, 12 + r * 40, 26, 24);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(12 + c * 48, 38 + r * 40, 34, 4);
+      }
+    }
+  } else {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(0, 216, 256, 40);
+    ctx.fillStyle = '#ffd23e';
+    ctx.fillRect(0, 212, 256, 4);
+    for (let r = 0; r < 4; r += 1) {
+      for (let c = 0; c < 4; c += 1) {
+        ctx.fillStyle = (r * 4 + c) % 3 === 0 ? windowLit : windowDark;
+        ctx.fillRect(20 + c * 58, 18 + r * 48, 34, 30);
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
 
 function neonTexture(text, colorHex) {
   const canvas = document.createElement('canvas');
@@ -92,9 +152,12 @@ export function createCity(scene) {
         const x = cx + ox;
         const z = cz + oz;
         const paint = pick(random, PALETTE.building);
+        const variant = Math.floor(random() * 4);
+        const facade = facadeTexture(variant, paint);
+        facade.repeat.set(Math.max(1, Math.round(w / 10)), Math.max(1, Math.round(h / 10)));
         const body = new THREE.Mesh(
           new THREE.BoxGeometry(w, h, d),
-          new THREE.MeshStandardMaterial({ color: paint, roughness: 0.85 }),
+          new THREE.MeshStandardMaterial({ map: facade, color: 0xffffff, roughness: 0.85 }),
         );
         body.position.set(x, h / 2, z);
         body.castShadow = true;
@@ -227,6 +290,40 @@ export function createCity(scene) {
   group.add(pylon);
   neonLights.push(pylonGlow);
 
+  // Ray's garage on Driftwood Lane: a low warehouse with a big roller
+  // door. Buying it lets Ray stash a car (G) and duck inside to drop a
+  // wanted star. It stands clear of the block grid, so it needs no
+  // collider — the door is the trigger, not a wall.
+  const garage = new THREE.Group();
+  const garageBody = new THREE.Mesh(
+    new THREE.BoxGeometry(20, 8, 14),
+    new THREE.MeshStandardMaterial({ color: 0x6a5a4a, roughness: 0.9 }),
+  );
+  garageBody.position.y = 4;
+  garageBody.castShadow = true;
+  garageBody.receiveShadow = true;
+  garage.add(garageBody);
+  const garageRoof = new THREE.Mesh(
+    new THREE.BoxGeometry(21, 1, 15),
+    new THREE.MeshStandardMaterial({ color: 0x3a3632, roughness: 1 }),
+  );
+  garageRoof.position.y = 8.5;
+  garage.add(garageRoof);
+  const garageDoor = new THREE.Mesh(
+    new THREE.BoxGeometry(12, 5.5, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x8a8f98, roughness: 0.6, metalness: 0.5 }),
+  );
+  garageDoor.position.set(0, 2.75, 7.2);
+  garage.add(garageDoor);
+  const garageSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(10, 2.5),
+    new THREE.MeshBasicMaterial({ map: neonTexture('GARAGE', PALETTE.neonYellow) }),
+  );
+  garageSign.position.set(0, 9.8, 7.4);
+  garage.add(garageSign);
+  garage.position.set(GARAGE.x, 0, GARAGE.z);
+  group.add(garage);
+
   function update(time) {
     // Neon signs breathe: a slow pulse so the signs feel alive, not painted.
     for (let i = 0; i < neonLights.length; i += 1) {
@@ -234,5 +331,5 @@ export function createCity(scene) {
     }
   }
 
-  return { colliders, buildingCount: built, update };
+  return { colliders, buildingCount: built, garage: { x: GARAGE.x, z: GARAGE.z }, update };
 }

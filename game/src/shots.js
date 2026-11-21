@@ -4,7 +4,7 @@
 // tool knows the frame is settled. The chase is the cover: Ray in the
 // Comet GT at speed, the Interceptor on his bumper, Air One overhead,
 // four wanted stars, the minimap and the mission objective on the HUD.
-import { MISSIONS } from './config.js';
+import { MISSIONS, POLICE } from './config.js';
 
 function setHudForShot(hudState) {
   const moneyEl = document.getElementById('money-value');
@@ -60,9 +60,14 @@ export function stageShot(name, game) {
     vehicles.police.yaw = Math.PI / 2;
     vehicles.police.speed = 28;
     vehicles.police.active = true;
+    vehicles.police.hits = 0;
+    vehicles.police.downTimer = 0;
+    vehicles.police.mesh.group.visible = true;
     vehicles.police.mesh.group.position.set(vehicles.police.x, 0, vehicles.police.z);
     vehicles.police.mesh.group.rotation.y = vehicles.police.yaw;
     vehicles.heli.visible = true;
+    vehicles.heliState.health = POLICE.heliHealth;
+    vehicles.heliState.downTimer = 0;
     vehicles.heli.position.set(car.x + 35, 13, car.z + 6);
     vehicles.heli.rotation.y = Math.PI / 2;
     camera.snapTo(car.x, car.z, car.yaw, 14, 7);

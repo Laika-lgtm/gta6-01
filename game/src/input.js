@@ -8,6 +8,12 @@ export const ACTION_PAUSE = 2;
 export const ACTION_MUTE = 4;
 export const ACTION_CONFIRM = 8;
 export const ACTION_PUNCH = 16;
+export const ACTION_WEAPON_NEXT = 32;
+export const ACTION_WEAPON_1 = 64;
+export const ACTION_WEAPON_2 = 128;
+export const ACTION_WEAPON_3 = 256;
+export const ACTION_RADIO = 512;
+export const ACTION_GARAGE = 1024;
 
 const FORWARD = new Set(['KeyW', 'ArrowUp']);
 const BACK = new Set(['KeyS', 'ArrowDown']);
@@ -27,6 +33,12 @@ export function createInput(canvas) {
     else if (event.code === 'KeyF') actions |= ACTION_PUNCH;
     else if (event.code === 'KeyP' || event.code === 'Escape') actions |= ACTION_PAUSE;
     else if (event.code === 'KeyM') actions |= ACTION_MUTE;
+    else if (event.code === 'KeyQ') actions |= ACTION_WEAPON_NEXT;
+    else if (event.code === 'Digit1') actions |= ACTION_WEAPON_1;
+    else if (event.code === 'Digit2') actions |= ACTION_WEAPON_2;
+    else if (event.code === 'Digit3') actions |= ACTION_WEAPON_3;
+    else if (event.code === 'KeyR') actions |= ACTION_RADIO;
+    else if (event.code === 'KeyG') actions |= ACTION_GARAGE;
     else if (event.code === 'Enter' || event.code === 'Space') actions |= ACTION_CONFIRM;
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) {
       event.preventDefault();

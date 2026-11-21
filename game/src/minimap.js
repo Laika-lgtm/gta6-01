@@ -91,6 +91,28 @@ export function createMinimap() {
       ctx.lineTo(hx, hy + 7);
       ctx.stroke();
     }
+    // Garage as a green square with a G, roadblocks as orange squares,
+    // and the tail-mission mark as a purple dot.
+    if (state.garage) {
+      const [gx, gy] = toMap(state.garage.x, state.garage.z);
+      ctx.fillStyle = state.garageOwned ? '#4ade80' : '#8a8f98';
+      ctx.fillRect(gx - 5, gy - 5, 10, 10);
+      ctx.fillStyle = '#111111';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText('G', gx, gy + 0.5);
+    }
+    if (state.roadblock && state.roadblock.active) {
+      const [rx, ry] = toMap(state.roadblock.x, state.roadblock.z);
+      ctx.fillStyle = '#ff7a1a';
+      ctx.fillRect(rx - 6, ry - 6, 12, 12);
+    }
+    if (state.mark && state.mark.active) {
+      const [mx, my] = toMap(state.mark.x, state.mark.z);
+      ctx.fillStyle = '#c04df0';
+      ctx.beginPath();
+      ctx.arc(mx, my, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
     // Player arrow, rotated to the heading.
     const [ux, uy] = toMap(state.player.x, state.player.z);
     ctx.save();

@@ -52,6 +52,13 @@ export function createPlayer(scene, colliders) {
     health: 100,
     money: 250,
     wanted: 0,
+    // Respect 0-100: the street's opinion of Ray. Missions and big plays
+    // raise it; the survey and the heist are gated on it.
+    respect: 0,
+    // Weapons: fists / pistol (24) / SMG (60). F fires whatever is armed.
+    weapon: 'fists',
+    ammo: { pistol: 24, smg: 60 },
+    fireCooldown: 0,
     moving: false,
     speed: 0,
     walkPhase: 0,
@@ -84,9 +91,35 @@ export function createPlayer(scene, colliders) {
     return true;
   }
 
+  /**
+   * Fire the armed weapon. Fists reuse the punch swing and never run out;
+   * guns spend one round per shot and refuse to fire on an empty magazine.
+   * Returns 'fists' | 'shot' | 'empty' | 'cooling'.
+   */
+  function fire() {
+    if (state.fireCooldown > 0) return 'cooling';
+    if (state.weapon === 'fists') {
+      if (!punch()) return 'cooling';
+      state.fireCooldown = 0.1;
+      return 'fists';
+    }
+    if (state.ammo[state.weapon] <= 0) return 'empty';
+    state.ammo[state.weapon] -= 1;
+    state.fireCooldown = state.weapon === 'smg' ? 0.14 : 0.34;
+    state.punchTimer = 0.18;
+    return 'shot';
+  }
+
+  /** Add respect, clamped to 0-100. Returns the new value. */
+  function addRespect(amount) {
+    state.respect = Math.max(0, Math.min(100, state.respect + amount));
+    return state.respect;
+  }
+
   function update(dt, input) {
     if (state.punchTimer > 0) state.punchTimer -= dt;
     if (state.punchCooldown > 0) state.punchCooldown -= dt;
+    if (state.fireCooldown > 0) state.fireCooldown -= dt;
     const run = input.shift ? PLAYER.runSpeed : PLAYER.walkSpeed;
     let fx = 0;
     let fz = 0;
@@ -148,6 +181,8 @@ export function createPlayer(scene, colliders) {
     group,
     update,
     punch,
+    fire,
+    addRespect,
     setPosition,
     position: () => new THREE.Vector3(state.x, 0, state.z),
   };

@@ -1,7 +1,10 @@
 // Procedural WebAudio only: no audio files. A low engine hum whose pitch
 // follows speed, soft footstep ticks while walking, a two-note UI blip and
-// a short police siren swell. Everything is built from oscillators and
+// a short police siren swell, plus a gunshot crack and three radio stations
+// built from looping arpeggios. Everything is built from oscillators and
 // noise buffers at boot; nothing is fetched.
+import { RADIO_STATIONS } from './config.js';
+
 export function createAudio() {
   let ctx = null;
   let engineOsc = null;
@@ -113,12 +116,76 @@ export function createAudio() {
     sirenNodes = { osc, lfo };
   }
 
+  // Radio: three procedural stations. Each one is a short looping
+  // arpeggio scheduled a note at a time from the station's own tempo and
+  // waveform, so no audio file is ever fetched. Radio only plays while Ray
+  // is in a car; the main loop owns that gate and calls setRadio.
+  let radioStation = -1;
+  let radioTimer = null;
+  let radioStep = 0;
+
+  function stopRadio() {
+    if (radioTimer !== null) {
+      window.clearInterval(radioTimer);
+      radioTimer = null;
+    }
+    radioStation = -1;
+  }
+
+  function setRadio(station) {
+    // station -1 means off; anything else is an index into RADIO_STATIONS.
+    stopRadio();
+    if (station < 0 || !ctx || muted) return;
+    const spec = RADIO_STATIONS[station % RADIO_STATIONS.length];
+    radioStation = station % RADIO_STATIONS.length;
+    radioStep = 0;
+    radioTimer = window.setInterval(() => {
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+      const freq = spec.notes[radioStep % spec.notes.length];
+      radioStep += 1;
+      const osc = ctx.createOscillator();
+      osc.type = spec.wave;
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.07, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + spec.tempo * 0.95);
+      osc.connect(gain);
+      gain.connect(ctx._master);
+      osc.start(t);
+      osc.stop(t + spec.tempo);
+    }, spec.tempo * 1000);
+  }
+
+  function gunshot() {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime;
+    const buffer = ctx.createBuffer(1, 4410, 44100);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 2400;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx._master);
+    src.start(t);
+  }
+
   function toggleMute() {
     muted = !muted;
     if (ctx) ctx._master.gain.value = muted ? 0 : 0.5;
-    if (muted) setSiren(false);
+    if (muted) {
+      setSiren(false);
+      stopRadio();
+    }
     return muted;
   }
 
-  return { resume, setEngine, footstep, blip, setSiren, toggleMute, isMuted: () => muted };
+  return { resume, setEngine, footstep, blip, setSiren, toggleMute, isMuted: () => muted, setRadio, gunshot, radioStation: () => radioStation };
 }
