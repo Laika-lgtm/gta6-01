@@ -37,12 +37,21 @@ export function stageShot(name, game) {
   if (screen) screen.style.display = 'none';
 
   if (name === 'chase') {
-    // Ray in the Comet GT, mid-avenue, the Interceptor closing in on his
-    // quarter and Air One hanging low ahead — four stars, mission live.
+    // Ray in the Comet GT, tearing north up the x=0 avenue, the
+    // Interceptor pulling alongside on his left and Air One hanging over
+    // the road ahead — four stars, mission live. The chase faces north
+    // on purpose: the building neon signs sit on the buildings' south
+    // faces, so only a north-looking camera sees them. The old staging
+    // put the car mid-block at (-40, 60) facing a building wall, so the
+    // frame was a facade and neither pursuer could be seen; the avenue
+    // keeps the whole chase in the open. The heli sits over the road
+    // centre (the sightline down the avenue is clear) at 14 m — high
+    // enough to read as overhead, low enough to stay inside the
+    // camera's top edge.
     const car = vehicles.cars[0];
-    car.x = -40;
-    car.z = 60;
-    car.yaw = Math.PI / 2;
+    car.x = 0;
+    car.z = 120;
+    car.yaw = Math.PI;
     car.speed = 30;
     car.mesh.group.position.set(car.x, 0, car.z);
     car.mesh.group.rotation.y = car.yaw;
@@ -55,9 +64,9 @@ export function stageShot(name, game) {
     // the getaway leg, so the minimap beacon must point at the marina drop.
     game.missionIndex = 2;
     game.missionPhase = 1;
-    vehicles.police.x = car.x + 2;
-    vehicles.police.z = car.z - 6;
-    vehicles.police.yaw = Math.PI / 2;
+    vehicles.police.x = -6;
+    vehicles.police.z = 108;
+    vehicles.police.yaw = Math.PI;
     vehicles.police.speed = 28;
     vehicles.police.active = true;
     vehicles.police.hits = 0;
@@ -68,9 +77,9 @@ export function stageShot(name, game) {
     vehicles.heli.visible = true;
     vehicles.heliState.health = POLICE.heliHealth;
     vehicles.heliState.downTimer = 0;
-    vehicles.heli.position.set(car.x + 35, 13, car.z + 6);
-    vehicles.heli.rotation.y = Math.PI / 2;
-    camera.snapTo(car.x, car.z, car.yaw, 14, 7);
+    vehicles.heli.position.set(0, 14, 85);
+    vehicles.heli.rotation.y = Math.PI;
+    camera.snapTo(car.x, car.z, car.yaw, 13, 6.5);
     return {
       money: 950, wanted: 4, missionIndex: 2, health: 82,
       speedMph: 68, speedLabel: 'COMET GT — E TO EXIT',

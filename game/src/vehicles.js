@@ -69,7 +69,11 @@ export function createVehicles(scene, colliders) {
     const paint = PALETTE.carPaint[i % PALETTE.carPaint.length];
     const mesh = buildCarMesh(scene, paint, false);
     const roadX = origin + (i % CITY.blocks) * pitch;
-    const roadZ = origin + Math.floor(i / CITY.blocks) * pitch * 2 - 30;
+    // Parked in a row along the northernmost road Ray can reach on foot.
+    // The old row (z = -245) sat 9 m past the player's northern clamp
+    // (z = -236), so no car could ever be stolen — the row lives on the
+    // -172 line instead: origin + pitch / 2 = -172, on tarmac, in reach.
+    const roadZ = origin + pitch / 2;
     const car = {
       name: CAR_NAMES[i % CAR_NAMES.length],
       mesh,
@@ -388,6 +392,17 @@ export function createVehicles(scene, colliders) {
     return true;
   }
 
+  // Stuck pursuit: if the Interceptor is active but barely moving and
+  // not closing on the player, it is grinding on a building corner
+  // (its steering is a straight line with no pathfinding). After 8 s of
+  // game time like that, snap it back onto a road near the player — the
+  // same "fleet returns" mechanism as the knock-out respawn — instead
+  // of letting the chase die wedged 30 m away (round-6 runs 5-6: the
+  // bust never fired). Speed is part of the test so an outrun police
+  // (fast, gap growing) is NOT respawned on top of a clean getaway.
+  let policeStuckTimer = 0;
+  let policeLastDist = Infinity;
+
   function update(dt, time, playerPos, wanted) {
     // Traffic AI: each car checks the same lane ahead of it. A car close
     // ahead makes it brake to a stop; one a little further ahead makes it
@@ -429,11 +444,23 @@ export function createVehicles(scene, colliders) {
     // of overshooting past them. At wanted 4 the helicopter joins.
     // A knocked-out Interceptor sits out its 8-second respawn delay, then
     // comes back snapped onto a road near the player — the fleet returns.
+    // The same snap applies the moment a pursuit STARTS: the Interceptor
+    // is parked at the precinct in the far north-west corner, and its
+    // steering is a straight line at the player with no pathfinding, so
+    // a pursuit that starts from the precinct drives into the first
+    // building corner it meets and grinds there forever — the chase
+    // never arrives, the bust never fires, and a wanted player can wait
+    // all day (round-6 playtest runs 5-6: no bust in 300 s + 240 s +
+    // 120 s of trying). Snapping onto a road 45-85 m from the player
+    // when the pursuit activates puts the chase on tarmac from the
+    // first second, the way the knock-out respawn already does.
     if (police.downTimer > 0) {
       police.downTimer -= dt;
       if (police.downTimer <= 0) respawnPolice(playerPos);
     }
+    const wasActive = police.active;
     police.active = wanted >= 2 && police.downTimer <= 0;
+    if (police.active && !wasActive) respawnPolice(playerPos);
     police.mesh.group.visible = true;
     if (police.active) {
       const dx = playerPos.x - police.x;
@@ -463,8 +490,26 @@ export function createVehicles(scene, colliders) {
       }
       police.mesh.group.position.set(police.x, 0, police.z);
       police.mesh.group.rotation.y = police.yaw;
+      // Stuck on a building corner: crawling (speed collapsed by the
+      // collision slowdown) and not closing for 8 s of game time means
+      // the pursuit is dead — snap the fleet back onto a road near the
+      // player instead of grinding there forever.
+      const distNow = Math.hypot(playerPos.x - police.x, playerPos.z - police.z);
+      if (police.speed < 3 && distNow > 25 && distNow > policeLastDist - 0.5) {
+        policeStuckTimer += dt;
+      } else {
+        policeStuckTimer = 0;
+      }
+      policeLastDist = distNow;
+      if (policeStuckTimer > 8) {
+        respawnPolice(playerPos);
+        policeStuckTimer = 0;
+        policeLastDist = Infinity;
+      }
     } else if (police.speed > 0) {
       police.speed = Math.max(0, police.speed - 10 * dt);
+      policeStuckTimer = 0;
+      policeLastDist = Infinity;
     }
     const heliWanted = wanted >= 4;
     let heliWarningShot = false;

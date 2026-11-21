@@ -13,7 +13,8 @@
 //
 // ?seed=N fixes the city. ?shot=chase|mission|drive|street (with &seed=N)
 // stages that scene instead of running the loop, paints it twice and sets
-// window.__shotReady for a screenshot.
+// window.__shotReady for a screenshot. ?lowfx=1 drops antialiasing, pixel
+// ratio and shadows for slow software renderers; gameplay is unchanged.
 import * as THREE from 'three';
 import {
   CAR, CITY, GARAGE, GETAWAY_CAR_INDEX, HEIST_ESCAPE_TARGET, MARK_CAR_INDEX,
@@ -41,11 +42,12 @@ const TAIL_NEEDED = 25;
 
 const params = new URLSearchParams(window.location.search);
 const shot = params.get('shot');
+const lowFx = params.get('lowfx') === '1';
 const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
 const seed = Number.isInteger(seedParam) ? seedParam : CITY.seed;
 
 const canvas = document.getElementById('game');
-const renderer = createRenderer(canvas);
+const renderer = createRenderer(canvas, [], { lowFx });
 const world = createWorld(renderer.scene);
 const city = createCity(renderer.scene);
 // The camera needs the building boxes so it can stay out of the walls.
@@ -399,6 +401,14 @@ function doBusted() {
       }
       screen = 'play';
       hud.hideScreen();
+      // Refresh the HUD + minimap synchronously: under a slow renderer
+      // the next rAF can be seconds away, and until it runs the DOM
+      // still shows the pre-bust wanted stars and the old minimap
+      // arrow — a reader (or a player mashing TRY AGAIN) sees stale
+      // state (round-6 run 10: D5/D7 read the bust-time stars/position
+      // even though the reset had already happened). The 3D view still
+      // waits for its next frame; only the 2D readouts refresh here.
+      refreshHud();
       hud.save({ ...hudState(), missionIndex: game.missionIndex });
     },
   );
@@ -777,6 +787,16 @@ function endFrame(dt, frozen) {
   hud.update(hudState());
   minimap.draw(minimapState());
   renderer.render();
+}
+
+/** Repaint the HUD + minimap from the current state right now, without
+ * waiting for the next animation frame. Screen-dismiss actions (TRY
+ * AGAIN, RESUME) call this so the readouts match the reset immediately.
+ */
+function refreshHud() {
+  updateBeacon();
+  hud.update(hudState());
+  minimap.draw(minimapState());
 }
 
 function frame(now) {

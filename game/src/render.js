@@ -6,17 +6,20 @@
 import * as THREE from 'three';
 import { PALETTE } from './config.js';
 
-export function createRenderer(canvas, initialColliders = []) {
-  // The building boxes arrive after the city is built; the camera clips
-  // against whatever set is current.
+export function createRenderer(canvas, initialColliders = [], opts = {}) {
+  // Low-FX mode (?lowfx=1): no antialiasing, pixel ratio 1, no shadow
+  // maps. Same scene, same gameplay — just far less GPU work per frame,
+  // which is what makes headless SwiftShader runs usable (the sim's dt
+  // clamp means a slow frame rate is a slow game clock).
+  const lowFx = !!opts.lowFx;
   let colliders = initialColliders;
   function setColliders(next) {
     colliders = next;
   }
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowFx });
+  renderer.setPixelRatio(lowFx ? 1 : Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = !lowFx;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -30,7 +33,7 @@ export function createRenderer(canvas, initialColliders = []) {
 
   const sun = new THREE.DirectionalLight(PALETTE.sun, 2.4);
   sun.position.set(120, 180, 60);
-  sun.castShadow = true;
+  sun.castShadow = !lowFx;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = -260;
   sun.shadow.camera.right = 260;
