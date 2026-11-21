@@ -31,6 +31,12 @@ const consoleErrors = [];
 const pageErrors = [];
 const failedRequests = [];
 let maxSpeedMph = 0;
+// Where the Bayliner was last parked (player position while driving it,
+// recorded after the C8 and D-step-1 brakes). The E-section re-entry
+// walks to this spot instead of the minimap dot, which merges with the
+// Palm Van parked 3.4 m away (run 6c: Ray walked to the merged centroid
+// and E found no car in 8 presses).
+let baylinerParked = null;
 // Live gameplay frame captured before the P reload (the title screen is
 // a flat gradient that compresses under 30 KB, so T7 must not capture
 // after the reload).
@@ -264,8 +270,27 @@ async function fireUntilDrop(page, ammoOf, prevAmmo, timeoutMs = 30000) {
 // (every read was one press behind), and E3 then drove a leg on foot.
 // Every press below with a HUD-observable outcome waits for that outcome
 // (up to 8 s of wall time) instead of sleeping a fixed interval.
+//
+// Round-6 run 4 proved 8 s is still not enough for the TOGGLE presses
+// (E enter/exit, R radio): the first E at the Bayliner failed its 8 s
+// wait and the second E only landed after that wait had expired — the
+// game processes a keypress seconds late under SwiftShader, the test
+// checks too early and gives up, and a blind second press then toggles
+// the state BACK (E enters, then the retry exits; R advances two
+// stations). So the toggle helpers below never re-press inside one
+// settle window: press once, poll up to 15 s for the HUD effect, and
+// only press again after a fresh HUD read still shows the old state.
+// A press that lands late is caught by the polling (or by the next
+// loop's read), never doubled. Checks stay meaningful: entry passes
+// only when the HUD actually shows in-car, radio only when the HUD
+// actually shows the station.
+// The speed label carries the car name in mixed case ("Bayliner Sedan
+// — E TO EXIT") while every `re` here is written uppercase, so the test
+// must run against the uppercased label — a raw test can never match
+// /BAYLINER/ and waitCar would burn its whole timeout on a success
+// (repro: in-car at 15.5 s, waitCar still timed out).
 async function waitCar(page, re, timeoutMs = 8000) {
-  return waitFor(page, async () => re.test((await hud(page)).speedLabel), timeoutMs, `car state ${re}`);
+  return waitFor(page, async () => re.test((await hud(page)).speedLabel.toUpperCase()), timeoutMs, `car state ${re}`);
 }
 async function waitRadio(page, station, timeoutMs = 8000) {
   return waitFor(page, async () => (await hud(page)).radio.includes(station), timeoutMs, `radio ${station}`);
@@ -279,13 +304,103 @@ async function waitScreen(page, h1, timeoutMs = 8000) {
 async function waitNoScreen(page, timeoutMs = 8000) {
   return waitFor(page, async () => !(await hud(page)).screenShown, timeoutMs, 'screen hidden');
 }
+// One hold-press per 15 s settle window, up to 60 s overall. The top-of-loop
+// HUD read is what makes a late press safe: if the previous press has
+// landed by then, we return without pressing again.
+//
+// E entry/exit use a HOLD, not a tap: release every movement key first
+// (Ray must be standing still — a held W keeps walking him away from
+// the car), then hold E down for 1.2 s of real time before releasing.
+// Repro (round-6 stage 3, spawn + Bayliner, 6 trials each): a 90 ms tap
+// and a 1.2 s hold both land 3/3 at the Bayliner in 0.1-1.3 s, so the
+// tap is NOT lost between SwiftShader frames the way the leading
+// hypothesis said — the game's input layer queues E as a bit flag and
+// the flag survives until the next frame. The hold is kept anyway: it
+// costs nothing, it cannot double-fire (the HUD confirm gates every
+// retry), and it removes the key-timing variable entirely. The real
+// E-entry gate is geometry (see closeInOnCar): E only reaches 4.5 m,
+// the HUD's 'E NEAR A CAR' line is shown unconditionally on foot and
+// proves nothing about range, and the car dot hides under Ray's arrow.
+async function releaseMoveKeys(page) {
+  for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight', 'Space']) await keyUpSafe(page, k);
+}
+async function holdKey(page, code, holdMs = 1200) {
+  if (page.isClosed()) return false;
+  try {
+    await page.keyboard.down(code);
+    await sleep(holdMs);
+    await page.keyboard.up(code);
+  } catch { return false; }
+  return true;
+}
+const TOGGLE_SETTLE_MS = 15000;
+const TOGGLE_TIMEOUT_MS = 60000;
 async function enterCar(page, re = /E TO EXIT/) {
-  await press(page, 'KeyE');
-  await waitCar(page, re);
+  const t0 = Date.now();
+  while (Date.now() - t0 < TOGGLE_TIMEOUT_MS) {
+    const label = (await hud(page)).speedLabel.toUpperCase();
+    if (re.test(label)) return true;
+    // In a different car already: never toggle out of it to chase `re`.
+    if (label.includes('E TO EXIT')) return false;
+    await releaseMoveKeys(page);
+    await holdKey(page, 'KeyE');
+    if (await waitCar(page, re, TOGGLE_SETTLE_MS)) return true;
+  }
+  return re.test((await hud(page)).speedLabel.toUpperCase());
 }
 async function exitCar(page) {
-  await press(page, 'KeyE');
-  await waitCar(page, /ON FOOT/);
+  const t0 = Date.now();
+  while (Date.now() - t0 < TOGGLE_TIMEOUT_MS) {
+    if ((await hud(page)).speedLabel === 'ON FOOT — E NEAR A CAR') return true;
+    await releaseMoveKeys(page);
+    await holdKey(page, 'KeyE');
+    if (await waitCar(page, /ON FOOT/, TOGGLE_SETTLE_MS)) return true;
+  }
+  return (await hud(page)).speedLabel === 'ON FOOT — E NEAR A CAR';
+}
+// Fresh-dot close-in (round-6 stage 3): E only reaches 4.5 m, and the
+// car dot hides under Ray's white arrow within ~18 m, so a walk that
+// ends a few metres off the expected spot can never be fixed by
+// pressing E again at the same spot — and a dot read taken standing
+// next to the car points at the NEXT car 78 m away. Step back ~22 m
+// (walkRoute stays on the roads), read the dot nearest the expected
+// spot while it is visible, walk to the dot itself (arrive 1.5), and
+// let the caller press E. Returns the dot, or null when no car sits
+// near the expected spot. Only runs after an entry has already failed,
+// so it never costs time on the happy path.
+async function closeInOnCar(page, ex, ez) {
+  const m0 = await map(page);
+  if (!m0 || !m0.player) return null;
+  const dx = m0.player.x - ex;
+  const dz = m0.player.z - ez;
+  const dl = Math.hypot(dx, dz);
+  const step = 22;
+  const away = dl < 2
+    ? { x: m0.player.x - step, z: m0.player.z }
+    : { x: m0.player.x + (dx / dl) * step, z: m0.player.z + (dz / dl) * step };
+  await walkRoute(page, away.x, away.z, { arrive: 4, timeoutMs: 120000 });
+  const m1 = await map(page);
+  if (!m1 || !m1.cars.length) return null;
+  const dot = m1.cars.reduce((best, c) => {
+    const d = Math.hypot(c.x - ex, c.z - ez);
+    return !best || d < best.d ? { c, d } : best;
+  }, null);
+  if (!dot || dot.d > 25) return null;
+  console.log(`closeInOnCar: fresh dot (${dot.c.x.toFixed(1)}, ${dot.c.z.toFixed(1)}) ${dot.d.toFixed(1)}m from expected spot`);
+  await walkRoute(page, dot.c.x, dot.c.z, { arrive: 1.5, timeoutMs: 120000 });
+  return dot.c;
+}
+// R cycles three stations, so a late press can only overshoot by one:
+// keep pressing (one per settle window) until the HUD shows the wanted
+// station — at most two presses past any overshoot.
+async function switchRadio(page, station) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < TOGGLE_TIMEOUT_MS) {
+    if ((await hud(page)).radio.includes(station)) return true;
+    await press(page, 'KeyR');
+    if (await waitRadio(page, station, TOGGLE_SETTLE_MS)) return true;
+  }
+  return (await hud(page)).radio.includes(station);
 }
 async function blurActive(page) {
   await page.evaluate(() => { if (document.activeElement) document.activeElement.blur(); });
@@ -922,6 +1037,10 @@ try {
   // Back to the car and in.
   const back = await walkRoute(page, -39.6, -172, { arrive: 2.0 });
   if (!back.ok) console.log(`walk-back note: ${back.reason}`);
+  // Respect before the steal: a wanted star can legitimately cool off
+  // during the long walk back after F12 (run 6c: RESPECT 2 at C15), so
+  // C15 checks the steal's +1 delta, not an absolute 1.
+  const respectBeforeSteal = (await hud(page)).respectNum;
   await enterCar(page, /BAYLINER SEDAN/);
   h = await hud(page);
   if (!h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN')) {
@@ -933,18 +1052,25 @@ try {
     await enterCar(page, /BAYLINER SEDAN/);
     h = await hud(page);
   }
+  if (!h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN')) {
+    // Still on foot: close in on the car's fresh dot (the dot hides
+    // under Ray's arrow at close range, so closeInOnCar steps back to
+    // read it) and try E once more before failing C3.
+    const dot = await closeInOnCar(page, -39.6, -172);
+    if (dot) {
+      await enterCar(page, /BAYLINER SEDAN/);
+      h = await hud(page);
+    }
+  }
   check('C3 E steals the Bayliner', h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN'), h.speedLabel);
   check('C4 radio starts on VICE FM in the car', h.radio.includes('VICE FM'), h.radio);
-  await press(page, 'KeyR');
-  await waitRadio(page, 'NEON NIGHTS');
+  await switchRadio(page, 'NEON NIGHTS');
   h = await hud(page);
   check('C5 R switches radio to NEON NIGHTS', h.radio.includes('NEON NIGHTS'), h.radio);
-  await press(page, 'KeyR');
-  await waitRadio(page, 'PALM TALK');
+  await switchRadio(page, 'PALM TALK');
   h = await hud(page);
   check('C6 R switches radio to PALM TALK', h.radio.includes('PALM TALK'), h.radio);
-  await press(page, 'KeyR');
-  await waitRadio(page, 'VICE FM');
+  await switchRadio(page, 'VICE FM');
   h = await hud(page);
   check('C7 R wraps radio back to VICE FM', h.radio.includes('VICE FM'), h.radio);
   // Wanted/respect from the steal are read here, right after the steal:
@@ -952,7 +1078,7 @@ try {
   // both numbers and make these checks test the drive, not the steal.
   check('C13 stealing the car sets wanted 2', h.stars === '★★☆☆☆', h.stars);
   check('C14 wanted stars are visible', h.starsVisible);
-  check('C15 stealing a car earns respect 1', h.respectNum === 1, h.respect);
+  check('C15 stealing a car earns respect 1', h.respectNum === respectBeforeSteal + 1, `respect ${respectBeforeSteal} -> ${h.respect}`);
   // Drive east along the -172 road to (43, -172): the car starts facing
   // south, so the leg proves both speed and a south -> east heading
   // swing. C8 reads the leg's own max speed.
@@ -972,6 +1098,11 @@ try {
   await page.keyboard.up('Space');
   h = await hud(page);
   check('C10 Space brakes the car down', braked && h.speed < 5, `${h.speed} mph`);
+  // Parked spot of the Bayliner, for the E-section re-entry (see above).
+  {
+    const mPark = await map(page);
+    if (mPark && mPark.player) baylinerParked = { x: mPark.player.x, z: mPark.player.z };
+  }
   if (!legC.ok) console.log(`C-leg note: ${legC.reason}`);
   await exitCar(page);
   h = await hud(page);
@@ -980,7 +1111,16 @@ try {
   // the car dot underneath it), then exit again for the D section.
   await enterCar(page, /BAYLINER SEDAN/);
   h = await hud(page);
-  const reEntered = h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN');
+  let reEntered = h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN');
+  if (!reEntered) {
+    const park = baylinerParked ?? { x: 43, z: -172 };
+    const dot = await closeInOnCar(page, park.x, park.z);
+    if (dot) {
+      await enterCar(page, /BAYLINER SEDAN/);
+      h = await hud(page);
+      reEntered = h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN');
+    }
+  }
   await exitCar(page);
   h = await hud(page);
   check('C12 the car stays beside Ray after exit', reEntered && h.speedLabel === 'ON FOOT — E NEAR A CAR', reEntered ? h.speedLabel : 're-enter failed');
@@ -1050,6 +1190,13 @@ try {
           if ((await hud(page)).speed < 5) break;
         }
         await page.keyboard.up('Space');
+        // Parked spot of the Bayliner, refreshed for the E-section
+        // re-entry (the car does not move during the bust wait: the
+        // shove guard needs W held, and TRY AGAIN only moves Ray).
+        {
+          const mPark = await map(page);
+          if (mPark && mPark.player) baylinerParked = { x: mPark.player.x, z: mPark.player.z };
+        }
         busted = await waitFor(page, isBusted, 240000, 'BUSTED screen boxed-in');
         console.log(`D step 1 boxed-in: busted=${busted}`);
       } else {
@@ -1121,24 +1268,60 @@ try {
 
   // E. Steal the Bayliner again, drive to Pier 9 — mission 1 (10 checks).
   {
-    const mm = await map(page);
-    // The Bayliner was left on the -172 road near (43, -172) after the
-    // C-section drive and the bust; pick the car dot nearest that spot.
-    const target = mm.cars.reduce((best, c) => {
-      const d = Math.hypot(c.x - 43, c.z - (-172));
-      return !best || d < best.d ? { c, d } : best;
-    }, null);
-    const walk2 = target ? await walkRoute(page, target.c.x, target.c.z, { arrive: 2.0 }) : { ok: false, reason: 'no car dot' };
+    // Re-entry target: the recorded parked spot first (the car sits
+    // where the C8/D drives left it), else the fresh car dot nearest
+    // (43, -172). The dot alone is NOT enough: it merges with the Palm
+    // Van parked 3.4 m away, and Ray walking to the merged centroid can
+    // end up out of E's 4.5 m reach of both cars (run 6c: 8 presses,
+    // 0 entries, E2 failed and the whole mission chain cascaded).
+    const spot = async () => {
+      if (baylinerParked) return { x: baylinerParked.x, z: baylinerParked.z };
+      const mm = await map(page);
+      if (!mm || !mm.cars.length) return null;
+      return mm.cars.reduce((best, c) => {
+        const d = Math.hypot(c.x - 43, c.z - (-172));
+        return !best || d < best.d ? { c, d } : best;
+      }, null)?.c ?? null;
+    };
+    const t0 = await spot();
+    const walk2 = t0 ? await walkRoute(page, t0.x, t0.z, { arrive: 1.5 }) : { ok: false, reason: 'no car dot' };
     check('E1 walked back to the Bayliner', walk2.ok, walk2.ok ? '' : walk2.reason);
-    await enterCar(page, /BAYLINER SEDAN/);
-    h = await hud(page);
-    if (!h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN') && target) {
-      // Same marginal-geometry retry as C3: walk right up to the car
-      // dot and try E once more.
-      await walkLeg(page, target.c.x, target.c.z, { arrive: 2.0, timeoutMs: 60000 });
+    // Up to 3 entry rounds, each re-targeting from a fresh read. If Ray
+    // lands in the wrong car (the Palm Van shares this kerb), drive it
+    // 45 m down the road so the Bayliner stands alone, then walk back
+    // and try again. E2 still passes only when the HUD shows the
+    // Bayliner itself.
+    let entered = false;
+    for (let round = 0; round < 3 && !entered; round++) {
       await enterCar(page, /BAYLINER SEDAN/);
       h = await hud(page);
+      entered = h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN');
+      if (entered) break;
+      if (h.speedLabel.includes('E TO EXIT')) {
+        await driveRoute(page, (baylinerParked?.x ?? 43) + 45, -172, { arrive: 8, timeoutMs: 120000 });
+        await exitCar(page);
+        const s = await spot();
+        if (s) await walkRoute(page, s.x, s.z, { arrive: 1.5 });
+      } else {
+        const s = await spot();
+        if (s) await walkLeg(page, s.x, s.z, { arrive: 1.5, timeoutMs: 60000 });
+        await enterCar(page, /BAYLINER SEDAN/);
+        h = await hud(page);
+        entered = h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN');
+        if (!entered) {
+          // Still on foot after walking to the recorded spot: the car
+          // may sit a few metres off it (nearest-car ambiguity with
+          // the Palm Van 3.4 m away) — close in on the fresh dot.
+          const dot = await closeInOnCar(page, baylinerParked?.x ?? 43, -172);
+          if (dot) {
+            await enterCar(page, /BAYLINER SEDAN/);
+            h = await hud(page);
+            entered = h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN');
+          }
+        }
+      }
     }
+    h = await hud(page);
     check('E2 E steals the Bayliner again', h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN'), h.speedLabel);
     const leg = await driveRoute(page, 296, 120, { arrive: 8, timeoutMs: 300000 });
     check('E3 cruise speed tops 30 mph on the run', leg.maxSpd > 30, `max ${leg.maxSpd} mph`);
@@ -1211,6 +1394,18 @@ try {
     check('I2 Ray is on foot after exiting', h.speedLabel === 'ON FOOT — E NEAR A CAR', h.speedLabel);
     await enterCar(page, /BAYLINER SEDAN/);
     h = await hud(page);
+    if (!h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN')) {
+      // Re-entry right after exit: the car is 2.4 m away, so a miss is
+      // marginal geometry — close in on the fresh dot and try again.
+      const mI = await map(page);
+      if (mI?.player) {
+        const dot = await closeInOnCar(page, mI.player.x, mI.player.z);
+        if (dot) {
+          await enterCar(page, /BAYLINER SEDAN/);
+          h = await hud(page);
+        }
+      }
+    }
     check('I3 re-entering the Bayliner starts the getaway', h.speedLabel.toUpperCase().startsWith('BAYLINER SEDAN'), h.speedLabel);
     check('I4 phase 1 points at the marina drop', h.mission.includes('drive the getaway car to the marina drop'), h.mission);
     const leg = await driveRoute(page, 180, -140, { arrive: 8, timeoutMs: 300000 });
@@ -1380,6 +1575,13 @@ try {
     if (!toCar.ok) console.log(`M-walk note: ${toCar.reason}`);
     await enterCar(page);
     h = await hud(page);
+    if (!h.speedLabel.includes('E TO EXIT')) {
+      const dot = await closeInOnCar(page, -200, 196);
+      if (dot) {
+        await enterCar(page);
+        h = await hud(page);
+      }
+    }
     check('M10 E gets back in the car', h.speedLabel.includes('E TO EXIT'), h.speedLabel);
   }
   expectedMoney = 4050;
