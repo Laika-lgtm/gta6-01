@@ -87,8 +87,10 @@ export function createPedestrians(scene) {
       let speed = ped.speed;
       if (ped.fleeTimer > 0) {
         // Sprint away from the threat for a short while, then calm down.
+        // The flee is deliberately slower than Ray's run (max ~4.2 m/s
+        // vs 11 m/s), so a punched pedestrian can be caught again.
         ped.fleeTimer -= dt;
-        speed = ped.speed * 3.2;
+        speed = ped.speed * 2;
         const dx = ped.x - ped.fleeX;
         const dz = ped.z - ped.fleeZ;
         const len = Math.hypot(dx, dz) || 1;
@@ -123,7 +125,7 @@ export function createPedestrians(scene) {
 
   /** Make a pedestrian run away from (x, z) for a short while. */
   function fleeFrom(ped, x, z) {
-    ped.fleeTimer = 1.8;
+    ped.fleeTimer = 1.2;
     ped.fleeX = x;
     ped.fleeZ = z;
   }

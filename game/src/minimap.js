@@ -54,16 +54,6 @@ export function createMinimap() {
       ctx.textBaseline = 'middle';
       ctx.fillText('★', tx, ty);
     }
-    // Pedestrians as small grey dots.
-    if (state.peds) {
-      ctx.fillStyle = '#c9c9c9';
-      for (const ped of state.peds) {
-        const [px, py] = toMap(ped.x, ped.z);
-        ctx.beginPath();
-        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
     // Cars as pale dots.
     ctx.fillStyle = '#dfe8ff';
     for (const car of state.cars) {
@@ -130,6 +120,19 @@ export function createMinimap() {
     ctx.fill();
     ctx.stroke();
     ctx.restore();
+    // Pedestrians as small grey dots, drawn LAST so a pedestrian Ray is
+    // standing on stays visible instead of hiding under the white
+    // player arrow (round-6 run 4: the F12 hunt chased strangers for
+    // 600 s because every ped Ray closed on vanished under the arrow).
+    if (state.peds) {
+      ctx.fillStyle = '#c9c9c9';
+      for (const ped of state.peds) {
+        const [px, py] = toMap(ped.x, ped.z);
+        ctx.beginPath();
+        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   return { draw };

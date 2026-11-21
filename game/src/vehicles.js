@@ -126,10 +126,15 @@ export function createVehicles(scene, colliders) {
     return { x, z: bestZ, axis: 'x' };
   }
 
-  /** Put the Interceptor back on a road at least 45 m from the player. */
+  /**
+   * Put the Interceptor back on a road at least 45 m from the player.
+   * (The 110 m far spawn tried in round-6 run 4 is reverted: from that
+   * far out the Interceptor took ~100 s of game time to reach Ray and
+   * the deliberate D bust never fired.)
+   */
   function respawnPolice(playerPos) {
     const offsets = [[60, 0], [-60, 0], [0, 60], [0, -60], [60, 60], [-60, -60]];
-    let spot = { x: playerPos.x + 60, z: playerPos.z };
+    let spot = snapToRoad(playerPos.x + 60, playerPos.z);
     for (const [ox, oz] of offsets) {
       const candidate = snapToRoad(playerPos.x + ox, playerPos.z + oz);
       if (Math.hypot(candidate.x - playerPos.x, candidate.z - playerPos.z) >= 45) {
@@ -361,8 +366,16 @@ export function createVehicles(scene, colliders) {
     }
     const nx = car.x + Math.sin(car.yaw) * car.speed * dt;
     const nz = car.z + Math.cos(car.yaw) * car.speed * dt;
+    // Slide along walls like Ray does on foot: a car pressed against a
+    // building while turning keeps its along-wall motion instead of
+    // bouncing to a stop and wedging there (round-6 run 5: the first
+    // drive stuck at 13 mph on the reverse-turn).
     if (!collides(nx, nz) && Math.abs(nx) < 300 && Math.abs(nz) < 240) {
       car.x = nx;
+      car.z = nz;
+    } else if (!collides(nx, car.z) && Math.abs(nx) < 300) {
+      car.x = nx;
+    } else if (!collides(car.x, nz) && Math.abs(nz) < 240) {
       car.z = nz;
     } else {
       car.speed *= -0.25;
@@ -376,19 +389,39 @@ export function createVehicles(scene, colliders) {
    * Anti-deadlock shove: when Ray holds the gas within 4.5 m of the
    * Interceptor head-on, the two cars would otherwise sit bumper to
    * bumper forever. Shove Ray's car 4.5 m sideways, away from the cop,
-   * so the chase can move again. Returns true when a shove happened.
+   * so the chase can move again. At most once per 2 s of game time:
+   * firing every frame walked the car sideways 4.5 m per frame and
+   * flung it off the road into the buildings (round-6 run 3: the first
+   * drive busted at 1 mph and the car could not be re-stolen after).
    */
+  let shoveCooldown = 0;
   function applyShove(car, input, policePos) {
     if (!input.forward) return false;
+    if (shoveCooldown > 0) return false;
     const dx = car.x - policePos.x;
     const dz = car.z - policePos.z;
     if (Math.hypot(dx, dz) >= 4.5) return false;
     const px = Math.cos(car.yaw);
     const pz = -Math.sin(car.yaw);
     const side = (px * dx + pz * dz) >= 0 ? 1 : -1;
-    car.x += px * side * 4.5;
-    car.z += pz * side * 4.5;
+    // Never shove the car into a wall or off the map: a car shoved
+    // inside a building footprint can never drive out again (drive()
+    // refuses every step from inside a collider). Try the other side;
+    // if both are blocked, skip the shove.
+    const okSpot = (x, z) => !collides(x, z) && Math.abs(x) < 300 && Math.abs(z) < 240;
+    const nx = car.x + px * side * 4.5;
+    const nz = car.z + pz * side * 4.5;
+    if (okSpot(nx, nz)) {
+      car.x = nx;
+      car.z = nz;
+    } else if (okSpot(car.x - px * side * 4.5, car.z - pz * side * 4.5)) {
+      car.x -= px * side * 4.5;
+      car.z -= pz * side * 4.5;
+    } else {
+      return false;
+    }
     car.mesh.group.position.set(car.x, 0, car.z);
+    shoveCooldown = 2;
     return true;
   }
 
@@ -403,7 +436,8 @@ export function createVehicles(scene, colliders) {
   let policeStuckTimer = 0;
   let policeLastDist = Infinity;
 
-  function update(dt, time, playerPos, wanted) {
+  function update(dt, time, playerPos, wanted, playerSlow = false) {
+    if (shoveCooldown > 0) shoveCooldown -= dt;
     // Traffic AI: each car checks the same lane ahead of it. A car close
     // ahead makes it brake to a stop; one a little further ahead makes it
     // ease off to half speed. Nobody drives through anybody — including
@@ -473,6 +507,11 @@ export function createVehicles(scene, colliders) {
       police.yaw += Math.max(-1.6 * dt, Math.min(1.6 * dt, diff));
       police.speed = Math.min(POLICE.chaseSpeed, police.speed + POLICE.chaseAccel * dt);
       if (dist < 8) police.speed = Math.min(police.speed, 12);
+      // Caught: a stopped or crawling player lets the Interceptor pull
+      // up and sit on the bumper instead of orbiting through them — the
+      // chase ends when Ray stops, so the boxed-in bust (3 s dwell)
+      // can actually land on a parked cop instead of a drive-by.
+      if (dist < 3.5 && playerSlow) police.speed = 0;
       const nx = police.x + Math.sin(police.yaw) * police.speed * dt;
       const nz = police.z + Math.cos(police.yaw) * police.speed * dt;
       if (!collides(nx, nz)) {
@@ -493,9 +532,15 @@ export function createVehicles(scene, colliders) {
       // Stuck on a building corner: crawling (speed collapsed by the
       // collision slowdown) and not closing for 8 s of game time means
       // the pursuit is dead — snap the fleet back onto a road near the
-      // player instead of grinding there forever.
+      // player instead of grinding there forever. The speed test is
+      // < 8, not < 3: the 0.4x collision slowdown holds a grinding
+      // Interceptor at ~4-5 m/s, above the old test, so it ground
+      // forever and never respawned (round-6 run 4: ~100 s of game
+      // time for the chase to arrive). An outrun police runs at
+      // 34 m/s, far above 8, so a clean getaway still never respawns
+      // the fleet on top of Ray.
       const distNow = Math.hypot(playerPos.x - police.x, playerPos.z - police.z);
-      if (police.speed < 3 && distNow > 25 && distNow > policeLastDist - 0.5) {
+      if (police.speed < 8 && distNow > 25 && distNow > policeLastDist - 0.5) {
         policeStuckTimer += dt;
       } else {
         policeStuckTimer = 0;

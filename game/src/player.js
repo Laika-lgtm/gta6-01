@@ -176,6 +176,31 @@ export function createPlayer(scene, colliders) {
     group.rotation.y = state.yaw;
   }
 
+  /**
+   * Punch lunge: step toward (x, z) until stopDist away, sliding along
+   * walls the same way a walk does — so a swing at a pedestrian Ray has
+   * just run up to actually connects instead of whiffing at arm's length.
+   */
+  function stepToward(x, z, stopDist) {
+    const dx = x - state.x;
+    const dz = z - state.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist <= stopDist) return;
+    const step = dist - stopDist;
+    const nx = state.x + (dx / dist) * step;
+    const nz = state.z + (dz / dist) * step;
+    const clamped = clampToCity(nx, nz);
+    if (!collides(clamped.x, clamped.z)) {
+      state.x = clamped.x;
+      state.z = clamped.z;
+    } else if (!collides(clamped.x, state.z)) {
+      state.x = clamped.x;
+    } else if (!collides(state.x, clamped.z)) {
+      state.z = clamped.z;
+    }
+    group.position.set(state.x, 0, state.z);
+  }
+
   return {
     state,
     group,
@@ -184,6 +209,7 @@ export function createPlayer(scene, colliders) {
     fire,
     addRespect,
     setPosition,
+    stepToward,
     position: () => new THREE.Vector3(state.x, 0, state.z),
   };
 }

@@ -24,7 +24,8 @@ export const PLAYER = {
   turnSpeed: 2.6,
   startX: -8,
   startZ: 8,
-  punchRange: 2.4,
+  punchRange: 4.5,
+  punchLunge: 2,
   punchCooldown: 0.45,
 };
 
@@ -69,7 +70,7 @@ export const POLICE = {
 // the SMG with 60. F fires whatever is armed; Q cycles, 1/2/3 pick one.
 export const WEAPONS = {
   order: ['fists', 'pistol', 'smg'],
-  fists: { name: 'FISTS', range: 2.4, damage: 1, ammo: Infinity },
+  fists: { name: 'FISTS', range: 4.5, damage: 1, ammo: Infinity },
   pistol: { name: 'PISTOL', range: 30, damage: 1, ammo: 24 },
   smg: { name: 'SMG', range: 26, damage: 1, ammo: 60 },
 };

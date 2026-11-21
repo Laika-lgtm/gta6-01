@@ -66,6 +66,9 @@ const game = {
   pedestrians,
   driving: null,
   missionIndex: 0,
+  // Driving-bust dwell: seconds of game time the Interceptor must sit
+  // on a crawling Ray's bumper before the bust lands (see the main loop).
+  bustTimer: 0,
   // The getaway and heist missions have two legs. Every other mission is
   // a single leg.
   missionPhase: 0,
@@ -444,8 +447,16 @@ function fireWeapon() {
     return;
   }
   if (result === 'fists') {
-    // The punch swing: same targets as before, at arm's length.
-    const ped = pedestrians.nearestPed(player.state.x, player.state.z, PLAYER.punchRange);
+    // The punch swing: a short forward step closes the last gap first,
+    // so a pedestrian Ray has just run up to is actually in reach.
+    let ped = pedestrians.nearestPed(player.state.x, player.state.z, PLAYER.punchRange);
+    if (!ped) {
+      const near = pedestrians.nearestPed(player.state.x, player.state.z, PLAYER.punchRange + PLAYER.punchLunge);
+      if (near) {
+        player.stepToward(near.x, near.z, 1.5);
+        ped = pedestrians.nearestPed(player.state.x, player.state.z, PLAYER.punchRange);
+      }
+    }
     const policeDist = Math.hypot(vehicles.police.x - player.state.x, vehicles.police.z - player.state.z);
     if (ped) {
       pedestrians.fleeFrom(ped, player.state.x, player.state.z);
@@ -664,7 +675,13 @@ function stepGame(dt) {
     }
   }
 
-  const police = vehicles.update(dt, time, player.position(), player.state.wanted);
+  // Whether Ray is stopped or crawling: the Interceptor parks on the
+  // bumper of a slow player instead of orbiting through them (see
+  // vehicles.update) — that is what lets the boxed-in bust land.
+  const playerSlow = game.driving
+    ? Math.abs(game.driving.speed) < 3
+    : Math.abs(player.state.speed) < 3;
+  const police = vehicles.update(dt, time, player.position(), player.state.wanted, playerSlow);
   game.lastPoliceDistance = police.policeDistance;
   audio.setSiren(player.state.wanted >= 2);
   // Air One's warning shots: at wanted 4+ the heli fires at Ray on foot.
@@ -692,10 +709,20 @@ function stepGame(dt) {
     }
   }
   // Boxed in while driving: the Interceptor on your bumper at a crawl
-  // means the chase is over too.
+  // for 3 s of game time means the chase is over. The dwell matters: a
+  // car turning out of a parking spot or nudging past the Interceptor
+  // is slow for a beat without being caught — the bust only lands when
+  // Ray is genuinely stuck, not on the first slow frame (round-6 run 3:
+  // the first drive busted mid-leg at 1 mph before it ever got going).
   if (game.driving && player.state.wanted >= 2 && police.policeDistance < 3.5 && Math.abs(game.driving.speed) < 3) {
-    doBusted();
-    return;
+    game.bustTimer += dt;
+    if (game.bustTimer > 3) {
+      game.bustTimer = 0;
+      doBusted();
+      return;
+    }
+  } else {
+    game.bustTimer = 0;
   }
 
   // Roadblocks guard escape missions at wanted 3+: ram through or go
