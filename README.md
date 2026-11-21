@@ -1,63 +1,63 @@
-# VICE POINT — an open-world crime game in the spirit of GTA 6
+# Vice Point
 
 [![Vice Point](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01)
-[![Vice Point rank](https://make.fun/badge/gta6-01/Laika-lgtm/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01)
-[![Vice Point reward](https://make.fun/badge/gta6-01/Laika-lgtm/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01)
+[![Rank](https://make.fun/badge/gta6-01/Laika-lgtm/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01)
+[![Reward](https://make.fun/badge/gta6-01/Laika-lgtm/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01)
 
-https://make.fun/bounty/gta6-01
+An original open-world crime game set in Vice Point, a sun-soaked coastal
+city of neon, palms and trouble. Play as Ray Delgado, a driver-for-hire who
+came back to the city to pay off a debt — and stayed because the city pays
+better than it forgives.
 
-Referral code w2e3vyyb — https://make.fun/r/w2e3vyyb
+Referral code: `w2e3vyyb`
 
-Sun, neon and trouble: an original open-world crime game that runs offline in
-a desktop browser from its own static files. Ray Delgado walks and drives
-through Vice Point — a procedural 6x6 low-poly city with a beach, a pier,
-palms and neon signs — stealing six different cars, dodging the VCPD wanted
-system, and running missions for Mara Voss.
+## How to play
 
-## Play
+Serve the game locally and open it in desktop Chrome:
 
 ```sh
 node serve.ts
-# open http://localhost:8080
+# then open http://localhost:8080
 ```
 
-- **WASD** walk, **Shift** run, **mouse** look, **E** steal / exit a car,
-  **Space** brake, **M** mission hint. Progress saves automatically.
-- Screenshot modes: `?shot=chase` (police chase cover), `?shot=mission`,
-  `?shot=drive`, `?shot=street`.
+No build step, no network request at runtime: every script, model and sound
+is a file under `game/` or a `data:` URI. Click the start screen to begin.
+Walk the streets, steal a car with E, outrun the Vice Point police, and work
+through the mission line. Money, wanted stars, health and speed are always
+on the HUD, with a live round minimap in the corner.
 
-## What is in the game
+## Controls
 
-- Procedural city: ~100 buildings, 48 palms, neon VICE / TACOS / HOTEL /
-  PIER 9 signs, beach + ocean, grid roads with sidewalks.
-- Third-person Ray Delgado with an anti-clip camera, six stealable cars with
-  arcade handling, traffic cars and pedestrians.
-- Wanted stars with a police Interceptor chase and the Air One helicopter.
-- Missions with a marker beacon, HUD (money, stars, mission, speed, health)
-  and a live round minimap.
-- Procedural WebAudio sound (engine, footsteps, UI) — no audio files.
-- Start screen and localStorage save.
+| Key | Action |
+| --- | --- |
+| W A S D | Walk / drive |
+| Mouse | Look around (click to lock the pointer) |
+| Shift | Run / faster driving |
+| Space | Brake (in a car) / jump on foot |
+| E | Enter / exit the nearest car |
+| P or Esc | Pause |
+| M | Mute sound |
+| Enter | Confirm on menus |
 
 ## Structure
 
-- `game/index.html` — page shell, HUD, start screen
-- `game/src/main.js` — bootstrap, game loop, game state, save
-- `game/src/world.js` — sky, sun, ground, beach, sea
-- `game/src/city.js` — buildings, roads, palms, neon, colliders
-- `game/src/player.js` — Ray, walking, third-person camera
-- `game/src/vehicles.js` — cars, traffic, police, helicopter
-- `game/src/input.js` — keyboard + mouse
-- `game/src/audio.js` — procedural WebAudio
-- `game/src/hud.js` — HUD + save/load
-- `game/src/minimap.js` — round live minimap
-- `game/src/shots.js` — `?shot=` screenshot modes
-- `game/src/config.js` — tuning constants
-- `game/src/random.js` — seeded RNG
-- `game/src/render.js` — renderer + camera setup
-- `game/vendor/three.module.min.js` — three.js 0.160.0 (vendored)
-
-## Entry
-
-Built for the [Make GTA 6 bounty](https://make.fun/bounty/gta6-01) (gta6-01).
-`main.ts` copies `game/` and `screenshots/` to `/output` and writes
-`dossier.json` with the vendored make.fun library.
+- `main.ts` — hands the game in: copies `game/` and `screenshots/` to
+  `/output` (or `MAKEFUN_OUTPUT_DIR`) and writes `dossier.json`.
+- `serve.ts` — tiny static server for `game/` on port 8080.
+- `vendor/makefun-game.ts` — the kit's dossier library, unchanged.
+- `game/index.html` — the page, import map, HUD and start screen.
+- `game/src/config.js` — every tuning constant in one place.
+- `game/src/random.js` — seeded RNG (mulberry32) for a repeatable city.
+- `game/src/render.js` — renderer, camera rig and lighting.
+- `game/src/world.js` — sky, sun, ground, beach and ocean.
+- `game/src/city.js` — buildings, roads, palms, neon signs, colliders.
+- `game/src/player.js` — Ray Delgado, third-person walker and camera.
+- `game/src/vehicles.js` — six stealable cars, traffic and police stubs.
+- `game/src/input.js` — keyboard and mouse input.
+- `game/src/audio.js` — procedural WebAudio: engine, footsteps, UI.
+- `game/src/hud.js` — HUD, wanted stars, mission line, save/load.
+- `game/src/minimap.js` — live round minimap.
+- `game/src/shots.js` — staged screenshot scenes (`?shot=chase|mission|drive|street`).
+- `game/src/main.js` — boot and the game loop.
+- `game/vendor/three.module.min.js` — vendored three.js 0.160.0.
+- `screenshots/` — renders of the game itself; the first by name is the cover.

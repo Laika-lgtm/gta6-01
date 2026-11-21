@@ -1,147 +1,134 @@
-// Vice Point — Ray Delgado, the third-person player character.
-// A low-poly figure built from boxes: teal shirt, dark jeans, sneakers, hair.
-// Walks with WASD relative to the camera, runs with Shift, and the camera
-// orbits on mouse drag and never clips through a building (it pulls in when
-// the line of sight hits one).
-
+// Ray Delgado, third-person walker. On foot he is a low-poly figure —
+// teal jacket, dark jeans, cap — with a simple walk swing; the mouse orbits
+// the camera and WASD moves relative to where the camera looks. The module
+// owns the player's position, heading, health and money, and resolves wall
+// collisions against the city's collider boxes.
 import * as THREE from 'three';
 import { PLAYER } from './config.js';
-import { resolveCircleCollisions, pointInsideBuildings } from './city.js';
 
-export function createPlayer(scene, start) {
+export function createPlayer(scene, colliders) {
   const group = new THREE.Group();
+  const jacket = new THREE.MeshStandardMaterial({ color: 0x1f8a70, roughness: 0.8 });
+  const jeans = new THREE.MeshStandardMaterial({ color: 0x2a3242, roughness: 0.9 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xc98d64, roughness: 0.7 });
+  const cap = new THREE.MeshStandardMaterial({ color: 0xd83a3a, roughness: 0.8 });
 
-  const skin = new THREE.MeshStandardMaterial({ color: 0xc98d64, roughness: 0.8 });
-  const shirt = new THREE.MeshStandardMaterial({ color: 0x2ea8a0, roughness: 0.85 });
-  const jeans = new THREE.MeshStandardMaterial({ color: 0x2b3a55, roughness: 0.9 });
-  const shoe = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.7 });
-  const hair = new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 1 });
-
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.72, 0.34), shirt);
-  torso.position.y = 1.18;
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.95, 0.45), jacket);
+  torso.position.y = 1.15;
   torso.castShadow = true;
   group.add(torso);
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.38, 0.34), skin);
-  head.position.y = 1.74;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), skin);
+  head.position.y = 1.9;
   head.castShadow = true;
   group.add(head);
-
-  const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.12, 0.36), hair);
-  hairTop.position.y = 1.95;
-  group.add(hairTop);
-
-  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.62, 0.18), shirt);
-  armL.position.set(-0.4, 1.2, 0);
+  const capMesh = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.16, 0.56), cap);
+  capMesh.position.y = 2.18;
+  group.add(capMesh);
+  const brim = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.3), cap);
+  brim.position.set(0, 2.12, 0.36);
+  group.add(brim);
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.85, 0.24), jacket);
+  armL.position.set(-0.58, 1.15, 0);
   armL.castShadow = true;
   group.add(armL);
   const armR = armL.clone();
-  armR.position.x = 0.4;
+  armR.position.x = 0.58;
   group.add(armR);
-
-  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.78, 0.24), jeans);
-  legL.position.set(-0.16, 0.42, 0);
+  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.85, 0.3), jeans);
+  legL.position.set(-0.2, 0.42, 0);
   legL.castShadow = true;
   group.add(legL);
   const legR = legL.clone();
-  legR.position.x = 0.16;
+  legR.position.x = 0.2;
   group.add(legR);
-
-  const shoeL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.1, 0.4), shoe);
-  shoeL.position.set(-0.16, 0.05, 0.06);
-  group.add(shoeL);
-  const shoeR = shoeL.clone();
-  shoeR.position.x = 0.16;
-  group.add(shoeR);
-
-  group.position.set(start.position.x, 0, start.position.z);
   scene.add(group);
 
-  return {
-    group,
-    armL,
-    armR,
-    legL,
-    legR,
-    x: start.position.x,
-    z: start.position.z,
-    heading: start.heading,
-    cameraYaw: start.heading + Math.PI,
-    cameraPitch: 0.32,
-    speed: 0,
+  const state = {
+    x: PLAYER.startX,
+    z: PLAYER.startZ,
+    yaw: 0,
+    camYaw: 0,
+    health: 100,
+    money: 250,
+    wanted: 0,
     moving: false,
+    speed: 0,
     walkPhase: 0,
-    health: PLAYER.maxHealth,
   };
-}
+  group.position.set(state.x, 0, state.z);
 
-// Move on foot. intent: {forward, strafe, run} in camera space.
-export function updatePlayer(player, intent, mouse, dt, colliders) {
-  const speed = intent.run ? PLAYER.runSpeed : PLAYER.walkSpeed;
-  const mx = Math.sin(player.cameraYaw);
-  const mz = Math.cos(player.cameraYaw);
-  // Camera looks along -forward of yaw; forward vector on the ground:
-  const fx = -mx;
-  const fz = -mz;
-  const rx = -fz;
-  const rz = fx;
+  // The beach runs to the sea; the playable east edge is the waterline.
+  const CITY_LIMIT_X = 296;
 
-  let dx = fx * intent.forward + rx * intent.strafe;
-  let dz = fz * intent.forward + rz * intent.strafe;
-  const len = Math.hypot(dx, dz);
-  player.moving = len > 0.01;
-  if (player.moving) {
-    dx /= len;
-    dz /= len;
-    const targetHeading = Math.atan2(dx, dz);
-    let diff = targetHeading - player.heading;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    player.heading += diff * Math.min(1, PLAYER.turnSpeed * dt);
-    const nx = player.x + dx * speed * dt;
-    const nz = player.z + dz * speed * dt;
-    const fixed = resolveCircleCollisions(nx, nz, PLAYER.radius, colliders);
-    player.x = fixed.x;
-    player.z = fixed.z;
-    player.speed = speed;
-    player.walkPhase += dt * (intent.run ? 13 : 8);
-  } else {
-    player.speed = 0;
-    player.walkPhase *= 0.9;
-  }
-
-  // Camera orbit from the mouse.
-  player.cameraYaw -= mouse.dx * 0.0032;
-  player.cameraPitch = Math.max(0.05, Math.min(1.1, player.cameraPitch + mouse.dy * 0.0024));
-
-  // Pose: swing limbs while walking, idle sway otherwise.
-  const swing = player.moving ? Math.sin(player.walkPhase) * 0.7 : 0;
-  player.armL.rotation.x = swing;
-  player.armR.rotation.x = -swing;
-  player.legL.rotation.x = -swing;
-  player.legR.rotation.x = swing;
-  player.group.position.set(player.x, 0, player.z);
-  player.group.rotation.y = player.heading;
-}
-
-// Third-person camera: behind the player at cameraYaw, pulled in when a
-// building blocks the view. Returns nothing; writes into camera.
-export function updatePlayerCamera(player, camera, colliders) {
-  const dist = PLAYER.cameraDistance;
-  const pitch = player.cameraPitch;
-  const target = new THREE.Vector3(player.x, 1.6, player.z);
-  let d = dist;
-  // Step the camera in until the line of sight is clear of buildings.
-  for (let tryDist = dist; tryDist >= PLAYER.cameraMinDistance; tryDist -= 0.5) {
-    const cx = player.x + Math.sin(player.cameraYaw) * Math.cos(pitch) * tryDist;
-    const cz = player.z + Math.cos(player.cameraYaw) * Math.cos(pitch) * tryDist;
-    const cy = 1.6 + Math.sin(pitch) * tryDist;
-    if (!pointInsideBuildings(cx, cz, colliders) || tryDist <= PLAYER.cameraMinDistance + 0.01) {
-      d = tryDist;
-      camera.position.set(cx, cy, cz);
-      break;
+  function collides(x, z) {
+    const r = PLAYER.radius;
+    for (const c of colliders) {
+      if (x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ) return true;
     }
+    return false;
   }
-  camera.lookAt(target);
-  return d;
+
+  function clampToCity(x, z) {
+    const lim = 236;
+    return { x: Math.max(-lim, Math.min(CITY_LIMIT_X, x)), z: Math.max(-lim, Math.min(lim, z)) };
+  }
+
+  function update(dt, input) {
+    const run = input.shift ? PLAYER.runSpeed : PLAYER.walkSpeed;
+    let fx = 0;
+    let fz = 0;
+    if (input.forward) { fx += Math.sin(state.camYaw); fz += Math.cos(state.camYaw); }
+    if (input.back) { fx -= Math.sin(state.camYaw); fz -= Math.cos(state.camYaw); }
+    if (input.left) { fx -= Math.cos(state.camYaw); fz += Math.sin(state.camYaw); }
+    if (input.right) { fx += Math.cos(state.camYaw); fz -= Math.sin(state.camYaw); }
+    const len = Math.hypot(fx, fz);
+    state.moving = len > 0;
+    if (len > 0) {
+      fx /= len;
+      fz /= len;
+      state.yaw = Math.atan2(fx, fz);
+      const nx = state.x + fx * run * dt;
+      const nz = state.z + fz * run * dt;
+      const clamped = clampToCity(nx, nz);
+      // Slide along walls: try the full step, then each axis alone.
+      if (!collides(clamped.x, clamped.z)) {
+        state.x = clamped.x;
+        state.z = clamped.z;
+      } else if (!collides(clamped.x, state.z)) {
+        state.x = clamped.x;
+      } else if (!collides(state.x, clamped.z)) {
+        state.z = clamped.z;
+      }
+      state.speed = run;
+      state.walkPhase += dt * run * 1.6;
+    } else {
+      state.speed = 0;
+    }
+    group.position.set(state.x, 0, state.z);
+    group.rotation.y = state.yaw;
+    const swing = state.moving ? Math.sin(state.walkPhase) * 0.55 : 0;
+    armL.rotation.x = swing;
+    armR.rotation.x = -swing;
+    legL.rotation.x = -swing;
+    legR.rotation.x = swing;
+  }
+
+  function setPosition(x, z, yaw) {
+    state.x = x;
+    state.z = z;
+    if (yaw !== undefined) {
+      state.yaw = yaw;
+      state.camYaw = yaw;
+    }
+    group.position.set(x, 0, z);
+    group.rotation.y = state.yaw;
+  }
+
+  return {
+    state,
+    group,
+    update,
+    setPosition,
+    position: () => new THREE.Vector3(state.x, 0, state.z),
+  };
 }

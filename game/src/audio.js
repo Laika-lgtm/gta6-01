@@ -1,224 +1,124 @@
-// Vice Point — procedural WebAudio sound.
-// Every sound is synthesised live: an engine hum whose pitch follows speed, a
-// soft footstep tick, UI blips and a wanted-level sting. No audio files are
-// downloaded; the AudioContext starts on the first user gesture.
-
+// Procedural WebAudio only: no audio files. A low engine hum whose pitch
+// follows speed, soft footstep ticks while walking, a two-note UI blip and
+// a short police siren swell. Everything is built from oscillators and
+// noise buffers at boot; nothing is fetched.
 export function createAudio() {
-  let context = null;
-  let master = null;
+  let ctx = null;
   let engineOsc = null;
   let engineGain = null;
-  let engineFilter = null;
-  let started = false;
-  let stepTimer = 0;
-  let sirenOsc = null;
-  let sirenGain = null;
+  let muted = false;
   let sirenOn = false;
+  let sirenNodes = null;
 
   function ensure() {
-    if (context) return true;
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return false;
-      context = new AC();
-      master = context.createGain();
-      master.gain.value = 0.5;
-      master.connect(context.destination);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  // Call from the first click / keypress so browsers allow sound.
-  function unlock() {
-    if (!ensure()) return;
-    if (context.state === 'suspended') context.resume().catch(() => {});
-    if (started) return;
-    started = true;
-    engineOsc = context.createOscillator();
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    const master = ctx.createGain();
+    master.gain.value = 0.5;
+    master.connect(ctx.destination);
+    engineOsc = ctx.createOscillator();
     engineOsc.type = 'sawtooth';
     engineOsc.frequency.value = 55;
-    engineFilter = context.createBiquadFilter();
+    const engineFilter = ctx.createBiquadFilter();
     engineFilter.type = 'lowpass';
-    engineFilter.frequency.value = 420;
-    engineGain = context.createGain();
-    engineGain.gain.value = 0.0;
+    engineFilter.frequency.value = 320;
+    engineGain = ctx.createGain();
+    engineGain.gain.value = 0;
     engineOsc.connect(engineFilter);
     engineFilter.connect(engineGain);
     engineGain.connect(master);
     engineOsc.start();
+    ctx._master = master;
+    return ctx;
   }
 
-  // speed 0..1, on = engine audible (driving). Call every frame.
-  function updateEngine(speed, on) {
-    if (!context || !engineOsc) return;
-    const target = on ? 0.05 + speed * 0.11 : 0.0;
-    engineGain.gain.setTargetAtTime(target, context.currentTime, 0.08);
-    engineOsc.frequency.setTargetAtTime(52 + speed * 130, context.currentTime, 0.05);
-    engineFilter.frequency.setTargetAtTime(380 + speed * 900, context.currentTime, 0.1);
+  function resume() {
+    const c = ensure();
+    if (c && c.state === 'suspended') c.resume();
   }
 
-  function blip(frequency, duration, type, volume) {
-    if (!ensure()) return;
-    try {
-      const osc = context.createOscillator();
-      const gain = context.createGain();
-      osc.type = type || 'sine';
-      osc.frequency.value = frequency;
-      gain.gain.setValueAtTime(volume ?? 0.16, context.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + duration);
-      osc.connect(gain);
-      gain.connect(master);
-      osc.start();
-      osc.stop(context.currentTime + duration);
-    } catch {
-      // Sound is decoration; never let it break the game.
-    }
+  function setEngine(speed, maxSpeed, driving) {
+    if (!ctx || muted) return;
+    const target = driving ? 0.05 + (Math.abs(speed) / maxSpeed) * 0.09 : 0;
+    engineGain.gain.setTargetAtTime(target, ctx.currentTime, 0.08);
+    engineOsc.frequency.setTargetAtTime(52 + Math.abs(speed) * 3.2, ctx.currentTime, 0.08);
   }
 
-  function uiClick() {
-    blip(660, 0.07, 'triangle', 0.14);
+  function footstep() {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime;
+    const buffer = ctx.createBuffer(1, 2205, 44100);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 500;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx._master);
+    src.start(t);
   }
 
-  function missionChime() {
-    blip(523, 0.12, 'sine', 0.18);
-    setTimeout(() => blip(784, 0.18, 'sine', 0.18), 110);
+  function blip(high) {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(high ? 880 : 620, t);
+    osc.frequency.setValueAtTime(high ? 1320 : 880, t + 0.07);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.16, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx._master);
+    osc.start(t);
+    osc.stop(t + 0.2);
   }
 
-  function wantedSting() {
-    blip(220, 0.16, 'square', 0.12);
-    setTimeout(() => blip(174, 0.22, 'square', 0.12), 150);
-  }
-
-  // Two-tone police siren: one triangle oscillator alternating 750/950 Hz.
-  // Call every frame; `active` is false when no chase is running, `dist` is
-  // the distance to the nearest police unit (the siren fades with it).
-  function updateSiren(active, dist, time) {
-    if (!context) return;
-    if (active && !sirenOsc) {
-      try {
-        sirenOsc = context.createOscillator();
-        sirenOsc.type = 'triangle';
-        sirenOsc.frequency.value = 750;
-        sirenGain = context.createGain();
-        sirenGain.gain.value = 0;
-        sirenOsc.connect(sirenGain);
-        sirenGain.connect(master);
-        sirenOsc.start();
-      } catch {
-        sirenOsc = null;
-        return;
+  function setSiren(on) {
+    if (on === sirenOn) return;
+    sirenOn = on;
+    if (!ctx) return;
+    if (!on) {
+      if (sirenNodes) {
+        try { sirenNodes.osc.stop(); } catch { /* already stopped */ }
+        sirenNodes = null;
       }
-    }
-    if (!sirenOsc) return;
-    sirenOn = !!active;
-    const target = active ? Math.max(0.015, 0.085 - Math.max(0, dist - 10) * 0.0012) : 0;
-    sirenGain.gain.setTargetAtTime(target, context.currentTime, 0.15);
-    if (active) {
-      const hi = Math.floor(time * 2.2) % 2 === 0;
-      sirenOsc.frequency.setTargetAtTime(hi ? 950 : 720, context.currentTime, 0.05);
-    }
-  }
-
-  // Low thump for a punch; a sharper crack on top when it connects.
-  function punchThud(hit) {
-    blip(72, 0.13, 'sine', 0.32);
-    if (hit) setTimeout(() => blip(190, 0.07, 'square', 0.14), 30);
-  }
-
-  // Busted sting: three descending notes.
-  function bustedSting() {
-    blip(392, 0.14, 'square', 0.13);
-    setTimeout(() => blip(311, 0.14, 'square', 0.13), 140);
-    setTimeout(() => blip(233, 0.26, 'square', 0.13), 280);
-  }
-
-  // Footstep tick while walking/running; dt is the frame delta.
-  function footstep(moving, running, dt) {
-    if (!context || !moving) return;
-    stepTimer -= dt;
-    if (stepTimer > 0) return;
-    stepTimer = running ? 0.32 : 0.48;
-    blip(90 + Math.random() * 30, 0.05, 'sine', 0.07);
-  }
-
-  // --- Radio: three procedural stations, in-car only ----------------------
-  // A tiny step sequencer: each station is an 8-step bass line plus a sparse
-  // lead over it, all sine/triangle so it sits under the engine instead of
-  // fighting it. No audio files, no samples — every note is an oscillator.
-  // PIRATE adds a hat tick on the off-beats. The radio only plays while Ray
-  // is in a car; on foot it is silent.
-  const STATIONS = [
-    {
-      name: 'VICE FM', bpm: 100, wave: 'sawtooth',
-      bass: [55, 55, 65.41, 49, 55, 55, 82.41, 65.41],
-      lead: [220, -1, 261.63, -1, 329.63, -1, 392, -1],
-    },
-    {
-      name: 'NEON 98', bpm: 76, wave: 'sine',
-      bass: [65.41, 65.41, 55, 55, 49, 49, 55, 55],
-      lead: [261.63, -1, -1, 329.63, -1, 392, -1, 523.25],
-    },
-    {
-      name: 'PIRATE 107', bpm: 128, wave: 'square',
-      bass: [55, 55, 55, 82.41, 55, 55, 65.41, 82.41],
-      lead: [440, 523.25, -1, 659.25, 587.33, -1, 523.25, 659.25],
-      hats: true,
-    },
-  ];
-  let radioStation = 0;
-  let radioStep = 0;
-  let radioStepTimer = 0;
-
-  function stationName() {
-    return STATIONS[radioStation].name;
-  }
-
-  function nextStation() {
-    radioStation = (radioStation + 1) % STATIONS.length;
-    radioStep = 0;
-    radioStepTimer = 0;
-    return stationName();
-  }
-
-  // Call every frame; `audible` is true only while Ray is driving. The
-  // sequencer advances in 8th notes at the station's tempo.
-  function updateRadio(dt, audible) {
-    if (!context || !audible) {
-      radioStepTimer = 0;
       return;
     }
-    const station = STATIONS[radioStation];
-    const stepDur = 60 / station.bpm / 2;
-    radioStepTimer += dt;
-    while (radioStepTimer >= stepDur) {
-      radioStepTimer -= stepDur;
-      const bass = station.bass[radioStep];
-      blip(bass, stepDur * 0.9, 'triangle', 0.10);
-      const lead = station.lead[radioStep];
-      if (lead > 0) blip(lead, stepDur * 0.7, station.wave, 0.045);
-      if (station.hats && radioStep % 2 === 1) blip(6000, 0.02, 'square', 0.02);
-      radioStep = (radioStep + 1) % 8;
-    }
+    if (muted) return;
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = 750;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.8;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 220;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    const gain = ctx.createGain();
+    gain.gain.value = 0.045;
+    osc.connect(gain);
+    gain.connect(ctx._master);
+    osc.start();
+    lfo.start();
+    sirenNodes = { osc, lfo };
   }
 
-  // Gunshot crack: a sharp square snap over a low thump.
-  function gunshot() {
-    blip(1500, 0.05, 'square', 0.20);
-    blip(85, 0.12, 'sine', 0.32);
+  function toggleMute() {
+    muted = !muted;
+    if (ctx) ctx._master.gain.value = muted ? 0 : 0.5;
+    if (muted) setSiren(false);
+    return muted;
   }
 
-  // Distant crack for a heli warning shot.
-  function heliWarning() {
-    blip(900, 0.08, 'square', 0.09);
-  }
-
-  return {
-    unlock, updateEngine, uiClick, missionChime, wantedSting, footstep,
-    updateSiren, punchThud, bustedSting, updateRadio, nextStation, stationName,
-    gunshot, heliWarning,
-    get sirenActive() { return sirenOn; },
-    get radioStation() { return radioStation; },
-  };
+  return { resume, setEngine, footstep, blip, setSiren, toggleMute, isMuted: () => muted };
 }
