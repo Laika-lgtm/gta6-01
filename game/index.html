@@ -1,147 +1,89 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VICE POINT — Open World</title>
 <link rel="icon" href="data:,">
-<title>Vice Point — Open-World Crime Game</title>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0b1c2c;
-    font-family: "Trebuchet MS", "Segoe UI", Verdana, sans-serif; color: #fff; }
-  #app { position: fixed; inset: 0; }
-  #app canvas { display: block; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0b14; font-family: 'Segoe UI', Arial, sans-serif; }
+  #game-canvas { display: block; width: 100%; height: 100%; }
   .hidden { display: none !important; }
 
-  /* ---- HUD ---- */
-  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
-  #cashBox { position: absolute; top: 14px; left: 16px; background: rgba(8, 20, 32, .62);
-    border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px; padding: 8px 14px;
-    font-size: 20px; font-weight: bold; letter-spacing: .5px; text-shadow: 0 1px 2px #000; }
-  #cashBox small { display: block; font-size: 11px; font-weight: normal; opacity: .75; letter-spacing: 2px; }
-  #wantedBox { position: absolute; top: 76px; left: 16px; font-size: 22px; letter-spacing: 3px;
-    color: #ffd166; text-shadow: 0 0 8px rgba(255, 209, 102, .7), 0 1px 2px #000; }
-  #wantedBox .off { color: rgba(255, 255, 255, .25); text-shadow: 0 1px 2px #000; }
-  #respectBox { position: absolute; top: 112px; left: 16px; background: rgba(8, 20, 32, .62);
-    border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px; padding: 6px 12px;
-    font-size: 13px; font-weight: bold; letter-spacing: 1px; color: #37e0c8; text-shadow: 0 1px 2px #000; }
-  #weaponBox { position: absolute; left: 16px; bottom: 16px; background: rgba(8, 20, 32, .62);
-    border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px; padding: 8px 14px;
-    font-size: 17px; font-weight: bold; letter-spacing: .5px; text-shadow: 0 1px 2px #000; }
-  #weaponBox small { display: block; font-size: 10px; font-weight: normal; opacity: .75; letter-spacing: 2px; }
-  #radioBox { position: absolute; left: 16px; bottom: 76px; background: rgba(8, 20, 32, .62);
-    border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px; padding: 6px 12px;
-    font-size: 13px; letter-spacing: .5px; text-shadow: 0 1px 2px #000; }
-  #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
-    border-radius: 50%; background: rgba(255, 255, 255, .85); box-shadow: 0 0 4px #000; }
-  #crosshair.aim { width: 12px; height: 12px; margin: -6px 0 0 -6px; background: transparent;
-    border: 2px solid rgba(255, 255, 255, .9); box-shadow: 0 0 6px #000; }
-  #weaponWheel { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    display: flex; gap: 18px; background: rgba(8, 20, 32, .72); border: 1px solid rgba(255, 255, 255, .3);
-    border-radius: 14px; padding: 16px 22px; }
-  .wheelSlot { text-align: center; font-size: 15px; font-weight: bold; letter-spacing: 1px;
-    padding: 10px 18px; border-radius: 10px; border: 2px solid rgba(255, 255, 255, .35); }
-  .wheelSlot small { display: block; font-size: 11px; font-weight: normal; opacity: .8; margin-top: 2px; }
-  .wheelSlot.active { border-color: #ffd166; color: #ffd166; }
-  #missionBox { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-    background: rgba(8, 20, 32, .62); border: 1px solid rgba(255, 255, 255, .22);
-    border-radius: 10px; padding: 8px 16px; text-align: center; max-width: 46vw; }
-  #missionTitle { font-size: 13px; font-weight: bold; color: #ffd166; letter-spacing: 1px; }
-  #missionText { font-size: 14px; margin-top: 2px; text-shadow: 0 1px 2px #000; }
-  #missionDist { font-size: 11px; opacity: .8; margin-top: 1px; }
-  #minimapWrap { position: absolute; top: 14px; right: 16px; width: 184px; height: 184px;
-    border-radius: 50%; overflow: hidden; border: 3px solid rgba(255, 255, 255, .55);
-    box-shadow: 0 0 0 3px rgba(8, 20, 32, .55), 0 4px 18px rgba(0, 0, 0, .5); background: #12283a; }
-  #minimap { width: 100%; height: 100%; display: block; }
-  #speedBox { position: absolute; right: 18px; bottom: 16px; text-align: right;
-    font-size: 30px; font-weight: bold; text-shadow: 0 2px 4px #000; }
-  #speedBox small { display: block; font-size: 11px; letter-spacing: 2px; opacity: .8; }
-  #hintBox { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
-    background: rgba(8, 20, 32, .6); border-radius: 8px; padding: 6px 14px;
-    font-size: 13px; letter-spacing: .4px; text-shadow: 0 1px 2px #000; }
-  #toast { position: absolute; left: 50%; top: 22%; transform: translateX(-50%);
-    background: rgba(8, 20, 32, .78); border: 1px solid #ffd166; border-radius: 10px;
-    padding: 10px 22px; font-size: 17px; font-weight: bold; color: #ffd166;
-    text-shadow: 0 1px 2px #000; opacity: 0; transition: opacity .3s; white-space: nowrap; }
-  #toast.show { opacity: 1; }
+  /* --- HUD --- */
+  #hud { position: absolute; inset: 0; pointer-events: none; color: #fff; }
+  #hud-money { position: absolute; top: 18px; right: 22px; font-size: 30px; font-weight: 800; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+  #hud-stars { position: absolute; top: 54px; right: 22px; font-size: 26px; letter-spacing: 3px; color: #ffd23f; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+  #hud-stars.hot { color: #ff4444; animation: blink .5s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+  #hud-mission { position: absolute; top: 18px; left: 18px; background: rgba(10,10,20,.62); border-left: 4px solid #ffd23f; padding: 10px 14px; border-radius: 4px; font-size: 15px; line-height: 1.45; max-width: 340px; }
+  #hud-mission b { color: #ffd23f; }
+  #hud-mission span { color: #cfd8e3; font-size: 13px; }
+  #hud-speed { position: absolute; bottom: 92px; right: 22px; font-size: 34px; font-weight: 800; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+  #hud-car { position: absolute; bottom: 64px; right: 22px; font-size: 14px; color: #e8e8e8; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+  #hud-health-wrap { position: absolute; bottom: 22px; right: 22px; width: 190px; }
+  #hud-health-label { font-size: 12px; letter-spacing: 1px; color: #e8e8e8; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+  #hud-health-bar-outer { height: 10px; background: rgba(0,0,0,.55); border-radius: 5px; overflow: hidden; margin-top: 3px; }
+  #hud-health-bar { height: 100%; width: 100%; background: #39d353; }
+  #hud-health-bar.low { background: #ff4444; }
+  #hud-health { display: none; }
+  #hud-toast { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); background: rgba(10,10,20,.78); padding: 10px 18px; border-radius: 6px; font-size: 17px; opacity: 0; transition: opacity .25s; white-space: nowrap; }
+  #hud-toast.show { opacity: 1; }
+  #controls-hint { position: absolute; bottom: 18px; left: 18px; font-size: 12px; color: rgba(255,255,255,.75); text-shadow: 0 1px 4px rgba(0,0,0,.9); line-height: 1.6; }
+  #minimap { position: absolute; bottom: 18px; left: 18px; width: 168px; height: 168px; border-radius: 50%; box-shadow: 0 0 0 3px rgba(255,255,255,.85), 0 4px 18px rgba(0,0,0,.6); }
+  #controls-hint { bottom: 196px; }
 
-  /* ---- Screens ---- */
-  .screen { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(160deg, rgba(10, 26, 44, .88), rgba(46, 12, 54, .82)); }
-  .panel { text-align: center; max-width: 560px; padding: 28px 34px; }
-  .logo { font-size: 64px; font-weight: 900; letter-spacing: 6px; line-height: 1;
-    background: linear-gradient(90deg, #ff5da2, #ffd166 55%, #37e0c8);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    text-shadow: 0 0 34px rgba(255, 93, 162, .25); }
-  .tagline { margin-top: 6px; font-size: 15px; letter-spacing: 3px; opacity: .9; text-transform: uppercase; }
-  .story { margin: 18px auto 4px; font-size: 15px; line-height: 1.55; opacity: .92; max-width: 480px; }
-  .menuBtn { pointer-events: auto; display: block; margin: 12px auto 0; min-width: 260px;
-    padding: 12px 20px; font-size: 17px; font-weight: bold; letter-spacing: 1px; color: #081420;
-    background: linear-gradient(90deg, #ffd166, #ff9a5c); border: none; border-radius: 10px; cursor: pointer; }
-  .menuBtn:hover { filter: brightness(1.08); }
-  .menuBtn.secondary { background: rgba(255, 255, 255, .14); color: #fff; border: 1px solid rgba(255,255,255,.4); }
-  .saveInfo { margin-top: 10px; font-size: 13px; opacity: .75; }
-  .controls { margin-top: 20px; font-size: 13px; line-height: 1.9; opacity: .85; }
-  .controls b { color: #ffd166; }
-  .foot { margin-top: 16px; font-size: 11px; opacity: .55; letter-spacing: 1px; }
+  /* --- Start screen --- */
+  #start-screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(10,8,24,.25) 0%, rgba(10,8,24,.72) 78%); color: #fff; text-align: center; }
+  #start-title { font-size: 92px; font-weight: 900; letter-spacing: 6px; margin: 0; background: linear-gradient(180deg, #ff2e88 15%, #ffb400 60%, #37e0ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 18px rgba(255,46,136,.55)); }
+  #start-tag { font-size: 20px; margin: 8px 0 0; color: #ffe9f4; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  #start-press { margin-top: 42px; font-size: 22px; font-weight: 700; letter-spacing: 2px; animation: blink 1.1s steps(2) infinite; }
+  #start-controls { margin-top: 26px; font-size: 15px; line-height: 1.9; color: #dfe6ef; text-shadow: 0 1px 6px rgba(0,0,0,.9); }
+  #start-credit { position: absolute; bottom: 18px; font-size: 12px; color: rgba(255,255,255,.6); }
+
+  /* --- Game over --- */
+  #game-over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(20,0,0,.72); color: #fff; text-align: center; }
+  #game-over h1 { font-size: 64px; margin: 0; color: #ff4444; letter-spacing: 4px; }
+  #game-over p { font-size: 18px; }
 </style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="hud-mission"></div>
+  <div id="hud-money">$250</div>
+  <div id="hud-stars">☆☆☆☆☆</div>
+  <div id="hud-speed">— mph</div>
+  <div id="hud-car">On foot</div>
+  <div id="hud-health-wrap">
+    <div id="hud-health-label">HEALTH <span id="hud-health">100</span></div>
+    <div id="hud-health-bar-outer"><div id="hud-health-bar"></div></div>
+  </div>
+  <div id="hud-toast"></div>
+  <canvas id="minimap" width="168" height="168"></canvas>
+  <div id="controls-hint">WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter / exit car<br>Mouse drag look &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; M map hint</div>
+</div>
+
+<div id="start-screen">
+  <h1 id="start-title">VICE POINT</h1>
+  <p id="start-tag">Sun, neon and trouble — a Vice City of your own.</p>
+  <div id="start-press">PRESS ENTER TO START</div>
+  <div id="start-controls">
+    WASD — walk &nbsp;·&nbsp; SHIFT — run &nbsp;·&nbsp; E — steal / exit car<br>
+    Mouse — look around &nbsp;·&nbsp; SPACE — brake &nbsp;·&nbsp; M — mission hint
+  </div>
+  <div id="start-credit">An original open-world game. No Rockstar content. Progress saves automatically.</div>
+</div>
+
+<div id="game-over" class="hidden">
+  <h1>BUSTED</h1>
+  <p>The VCPD caught up with Ray. Press Enter to get back out there.</p>
+</div>
+
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
 </script>
-</head>
-<body>
-<div id="app"></div>
-
-<div id="hud" class="hidden">
-  <div id="cashBox">$<span id="cashValue">0</span><small>VICE POINT</small></div>
-  <div id="wantedBox" title="Wanted level"></div>
-  <div id="respectBox"><span id="respectValue">RESPECT 0 · GARAGE 0</span></div>
-  <div id="missionBox">
-    <div id="missionTitle">MISSION</div>
-    <div id="missionText"></div>
-    <div id="missionDist"></div>
-  </div>
-  <div id="minimapWrap"><canvas id="minimap" width="368" height="368"></canvas></div>
-  <div id="speedBox" class="hidden"><span id="speedValue">0</span><small>MPH</small></div>
-  <div id="radioBox" class="hidden"><span id="radioValue"></span></div>
-  <div id="weaponBox"><span id="weaponValue">PISTOL · ∞</span><small>WEAPON · HOLD Q WHEEL · 1/2 SWITCH</small></div>
-  <div id="hintBox">WASD move &nbsp;·&nbsp; drag mouse to look &nbsp;·&nbsp; SHIFT run &nbsp;·&nbsp; SPACE jump &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; M mute</div>
-  <div id="toast"></div>
-  <div id="crosshair"></div>
-  <div id="weaponWheel" class="hidden">
-    <div class="wheelSlot" id="wheelPistol">PISTOL<small>1 · ∞ ammo</small></div>
-    <div class="wheelSlot" id="wheelSmg">SMG<small>2 · 270 ammo</small></div>
-  </div>
-</div>
-
-<div id="startScreen" class="screen">
-  <div class="panel">
-    <div class="logo">VICE POINT</div>
-    <div class="tagline">Sun · Sea · Streets · Cash</div>
-    <p class="story">Ray Delgado is back in Vice Point with an empty wallet and a
-    reputation to rebuild. Borrow cars, run jobs across the city, and stack
-    cash — the streets remember who shows up.</p>
-    <button id="btnNew" class="menuBtn">NEW GAME</button>
-    <button id="btnContinue" class="menuBtn secondary hidden">CONTINUE</button>
-    <div id="saveInfo" class="saveInfo"></div>
-    <div class="controls">
-      <b>WASD</b> walk / drive &nbsp;·&nbsp; <b>Mouse drag</b> look &nbsp;·&nbsp; <b>SHIFT</b> run<br>
-      <b>SPACE</b> jump &nbsp;·&nbsp; <b>E</b> enter / exit car &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>ESC</b> pause<br>
-      <b>Click</b> shoot &nbsp;·&nbsp; <b>Right mouse</b> aim up &nbsp;·&nbsp; <b>Q</b> weapon wheel &nbsp;·&nbsp; <b>1/2</b> switch weapon<br>
-      <b>R</b> radio station &nbsp;·&nbsp; <b>G</b> garage (on the beach lot)
-    </div>
-    <div class="foot">VICE POINT — AN ORIGINAL OPEN-WORLD GAME · PLAYS OFFLINE</div>
-  </div>
-</div>
-
-<div id="pauseScreen" class="screen hidden">
-  <div class="panel">
-    <div class="logo" style="font-size:44px">PAUSED</div>
-    <p class="story">The city waits for nobody — except right now.</p>
-    <button id="btnResume" class="menuBtn">RESUME</button>
-    <button id="btnQuit" class="menuBtn secondary">SAVE &amp; QUIT TO TITLE</button>
-  </div>
-</div>
-
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

@@ -1,0 +1,82 @@
+// Vice Point — central tuning and world constants.
+// One place for every number the other modules share: city layout, player
+// feel, vehicle handling, wanted levels and the save-game key.
+
+export const GAME_TITLE = 'VICE POINT';
+export const SAVE_KEY = 'vicepoint-save-v1';
+export const GAME_VERSION = '1.0.0-r5s1';
+
+// --- City layout ------------------------------------------------------------
+export const CITY = {
+  blocksX: 6,
+  blocksZ: 6,
+  blockSize: 42, // centre-to-centre distance of city blocks
+  roadWidth: 14,
+  sidewalkWidth: 3,
+  buildingCount: 100,
+  palmCount: 48,
+  groundSize: 560, // ground plane side length
+  oceanEdge: 190, // x beyond this is beach, then sea
+  beachWidth: 34,
+};
+
+// --- Player -----------------------------------------------------------------
+export const PLAYER = {
+  walkSpeed: 5.2,
+  runSpeed: 9.5,
+  turnSpeed: 9.0,
+  radius: 0.55,
+  height: 1.8,
+  maxHealth: 100,
+  cameraDistance: 7.5,
+  cameraHeight: 3.2,
+  cameraMinDistance: 2.2,
+};
+
+// --- Vehicles ---------------------------------------------------------------
+// Six stealable street cars. accel/topSpeed are in m/s units, handling is a
+// 0..1 steering sharpness, grip damps sideways slide.
+export const CAR_DEFS = [
+  { id: 'sunset', name: 'Sunset GT', color: 0xff5a3c, topSpeed: 34, accel: 16, brake: 30, handling: 0.95, grip: 6.5, length: 4.6, width: 2.0 },
+  { id: 'marlin', name: 'Marlin S', color: 0x2e86ff, topSpeed: 30, accel: 14, brake: 28, handling: 0.85, grip: 6.0, length: 4.4, width: 1.9 },
+  { id: 'palmetto', name: 'Palmetto', color: 0xffd23f, topSpeed: 26, accel: 11, brake: 26, handling: 0.7, grip: 5.0, length: 4.2, width: 1.9 },
+  { id: 'bayside', name: 'Bayside Van', color: 0x7ee081, topSpeed: 24, accel: 9, brake: 24, handling: 0.55, grip: 4.5, length: 5.2, width: 2.2 },
+  { id: 'neon', name: 'Neon Coupe', color: 0xc44dff, topSpeed: 38, accel: 18, brake: 32, handling: 1.0, grip: 7.5, length: 4.3, width: 1.95 },
+  { id: 'coral', name: 'Coral Cruiser', color: 0xff8fb3, topSpeed: 28, accel: 12, brake: 26, handling: 0.75, grip: 5.5, length: 4.8, width: 2.0 },
+];
+
+// Police pursuit car (not stealable in stage 1, it hunts the player).
+export const POLICE_DEF = {
+  id: 'interceptor', name: 'Interceptor', color: 0x14181f, topSpeed: 36, accel: 19, brake: 34, handling: 1.0, grip: 7.0, length: 4.7, width: 2.0,
+};
+
+// --- Wanted -----------------------------------------------------------------
+export const WANTED = {
+  maxStars: 5,
+  policeSpawnRadius: 42,
+  policeDespawnRadius: 120,
+  chaseSpeedBoost: 1.06,
+};
+
+// --- Missions ---------------------------------------------------------------
+// Stage 1 ships the opening mission plus the mission roster the later stages
+// fill in. Each mission: an id, a title, a one-line objective and a marker.
+export const MISSIONS = [
+  { id: 'm1-pier-meet', title: 'Pier Pressure', giver: 'Mara Voss', objective: 'Meet Mara at Pier 9', marker: { x: 214, z: 96 }, reward: 500 },
+  { id: 'm2-first-ride', title: 'First Ride', giver: 'Mara Voss', objective: 'Steal any car and drive to the neon VICE sign', marker: { x: 0, z: 0 }, reward: 300 },
+  { id: 'm3-sunset-run', title: 'Sunset Run', giver: 'Deke', objective: 'Reach the beach lookout before sundown', marker: { x: 178, z: -120 }, reward: 750 },
+];
+
+export const START = {
+  money: 250,
+  position: { x: 0, z: 24 },
+  heading: Math.PI,
+};
+
+// Neon signs painted on the city (procedural canvas textures, no images).
+export const NEON_SIGNS = [
+  { text: 'VICE', color: '#ff2e88', x: 0, z: 0, y: 26, size: 9 },
+  { text: 'TACOS', color: '#ffb400', x: 42, z: 42, y: 12, size: 4 },
+  { text: 'HOTEL', color: '#37e0ff', x: -42, z: -42, y: 18, size: 5 },
+  { text: 'PIER 9', color: '#7dff6a', x: 214, z: 96, y: 10, size: 4 },
+];
