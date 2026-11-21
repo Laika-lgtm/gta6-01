@@ -43,9 +43,11 @@ export function createMinimap(canvas) {
       ctx.fillRect(bx, bz, Math.max(2, b.w * scale), Math.max(2, b.d * scale));
     }
 
-    // Mission marker: pulsing yellow diamond.
+    // Mission marker: pulsing yellow diamond. Escape missions have no
+    // marker (null on purpose), so guard it — an unguarded marker read here
+    // used to throw every frame and make the mission impossible.
     const mission = MISSIONS[state.missionIndex];
-    if (mission) {
+    if (mission && mission.marker) {
       const [mx, mz] = worldToMap(mission.marker.x, mission.marker.z);
       const pulse = 5 + Math.sin(time * 4) * 2;
       ctx.fillStyle = '#ffd23f';
@@ -70,9 +72,10 @@ export function createMinimap(canvas) {
       ctx.fill();
     }
 
-    // Police: flashing blue/red.
-    if (state.police) {
-      const [px, pz] = worldToMap(state.police.x, state.police.z);
+    // Police: flashing blue/red dots, one per Interceptor on the hunt.
+    const units = Array.isArray(state.police) ? state.police : (state.police ? [state.police] : []);
+    for (const unit of units) {
+      const [px, pz] = worldToMap(unit.x, unit.z);
       ctx.fillStyle = Math.floor(time * 4) % 2 === 0 ? '#2e86ff' : '#ff3333';
       ctx.beginPath();
       ctx.arc(px, pz, 4, 0, Math.PI * 2);

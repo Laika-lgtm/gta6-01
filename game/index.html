@@ -29,6 +29,9 @@
   #hud-health { display: none; }
   #hud-toast { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); background: rgba(10,10,20,.78); padding: 10px 18px; border-radius: 6px; font-size: 17px; opacity: 0; transition: opacity .25s; white-space: nowrap; }
   #hud-toast.show { opacity: 1; }
+  #hud-arrow { position: absolute; top: 150px; left: 50%; transform: translateX(-50%); text-align: center; color: #ffd23f; text-shadow: 0 2px 6px rgba(0,0,0,.9); pointer-events: none; }
+  #hud-arrow-char { display: inline-block; font-size: 30px; line-height: 1; }
+  #hud-arrow-dist { font-size: 14px; font-weight: 700; color: #fff; }
   #controls-hint { position: absolute; bottom: 18px; left: 18px; font-size: 12px; color: rgba(255,255,255,.75); text-shadow: 0 1px 4px rgba(0,0,0,.9); line-height: 1.6; }
   #minimap { position: absolute; bottom: 18px; left: 18px; width: 168px; height: 168px; border-radius: 50%; box-shadow: 0 0 0 3px rgba(255,255,255,.85), 0 4px 18px rgba(0,0,0,.6); }
   #controls-hint { bottom: 196px; }
@@ -45,6 +48,11 @@
   #game-over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(20,0,0,.72); color: #fff; text-align: center; }
   #game-over h1 { font-size: 64px; margin: 0; color: #ff4444; letter-spacing: 4px; }
   #game-over p { font-size: 18px; }
+
+  /* --- Pause --- */
+  #pause-screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(8,8,18,.66); color: #fff; text-align: center; }
+  #pause-screen h1 { font-size: 56px; margin: 0; letter-spacing: 6px; color: #ffd23f; }
+  #pause-screen p { font-size: 18px; }
 </style>
 </head>
 <body>
@@ -61,8 +69,14 @@
     <div id="hud-health-bar-outer"><div id="hud-health-bar"></div></div>
   </div>
   <div id="hud-toast"></div>
+  <div id="hud-arrow" class="hidden"><span id="hud-arrow-char">▲</span><div id="hud-arrow-dist"></div></div>
   <canvas id="minimap" width="168" height="168"></canvas>
-  <div id="controls-hint">WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter / exit car<br>Mouse drag look &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; M map hint</div>
+  <div id="controls-hint">WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter / exit car<br>F punch &nbsp;·&nbsp; Mouse drag look &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; Esc pause &nbsp;·&nbsp; M map hint</div>
+</div>
+
+<div id="pause-screen" class="hidden">
+  <h1>PAUSED</h1>
+  <p>Press Esc to get back out there.</p>
 </div>
 
 <div id="start-screen">
@@ -71,7 +85,7 @@
   <div id="start-press">PRESS ENTER TO START</div>
   <div id="start-controls">
     WASD — walk &nbsp;·&nbsp; SHIFT — run &nbsp;·&nbsp; E — steal / exit car<br>
-    Mouse — look around &nbsp;·&nbsp; SPACE — brake &nbsp;·&nbsp; M — mission hint
+    F — punch &nbsp;·&nbsp; Mouse — look around &nbsp;·&nbsp; SPACE — brake &nbsp;·&nbsp; ESC — pause &nbsp;·&nbsp; M — mission hint
   </div>
   <div id="start-credit">An original open-world game. No Rockstar content. Progress saves automatically.</div>
 </div>
@@ -79,6 +93,7 @@
 <div id="game-over" class="hidden">
   <h1>BUSTED</h1>
   <p>The VCPD caught up with Ray. Press Enter to get back out there.</p>
+  <p id="game-over-fine"></p>
 </div>
 
 <script type="importmap">

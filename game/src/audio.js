@@ -11,6 +11,9 @@ export function createAudio() {
   let engineFilter = null;
   let started = false;
   let stepTimer = 0;
+  let sirenOsc = null;
+  let sirenGain = null;
+  let sirenOn = false;
 
   function ensure() {
     if (context) return true;
@@ -88,6 +91,49 @@ export function createAudio() {
     setTimeout(() => blip(174, 0.22, 'square', 0.12), 150);
   }
 
+  // Two-tone police siren: one triangle oscillator alternating 750/950 Hz.
+  // Call every frame; `active` is false when no chase is running, `dist` is
+  // the distance to the nearest police unit (the siren fades with it).
+  function updateSiren(active, dist, time) {
+    if (!context) return;
+    if (active && !sirenOsc) {
+      try {
+        sirenOsc = context.createOscillator();
+        sirenOsc.type = 'triangle';
+        sirenOsc.frequency.value = 750;
+        sirenGain = context.createGain();
+        sirenGain.gain.value = 0;
+        sirenOsc.connect(sirenGain);
+        sirenGain.connect(master);
+        sirenOsc.start();
+      } catch {
+        sirenOsc = null;
+        return;
+      }
+    }
+    if (!sirenOsc) return;
+    sirenOn = !!active;
+    const target = active ? Math.max(0.015, 0.085 - Math.max(0, dist - 10) * 0.0012) : 0;
+    sirenGain.gain.setTargetAtTime(target, context.currentTime, 0.15);
+    if (active) {
+      const hi = Math.floor(time * 2.2) % 2 === 0;
+      sirenOsc.frequency.setTargetAtTime(hi ? 950 : 720, context.currentTime, 0.05);
+    }
+  }
+
+  // Low thump for a punch; a sharper crack on top when it connects.
+  function punchThud(hit) {
+    blip(72, 0.13, 'sine', 0.32);
+    if (hit) setTimeout(() => blip(190, 0.07, 'square', 0.14), 30);
+  }
+
+  // Busted sting: three descending notes.
+  function bustedSting() {
+    blip(392, 0.14, 'square', 0.13);
+    setTimeout(() => blip(311, 0.14, 'square', 0.13), 140);
+    setTimeout(() => blip(233, 0.26, 'square', 0.13), 280);
+  }
+
   // Footstep tick while walking/running; dt is the frame delta.
   function footstep(moving, running, dt) {
     if (!context || !moving) return;
@@ -97,5 +143,5 @@ export function createAudio() {
     blip(90 + Math.random() * 30, 0.05, 'sine', 0.07);
   }
 
-  return { unlock, updateEngine, uiClick, missionChime, wantedSting, footstep };
+  return { unlock, updateEngine, uiClick, missionChime, wantedSting, footstep, updateSiren, punchThud, bustedSting, get sirenActive() { return sirenOn; } };
 }

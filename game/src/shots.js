@@ -44,21 +44,37 @@ export function applyShotMode(game, shot) {
     // behind the coupe, Air One low and circling just behind it.
     const interceptor = game.police;
     if (interceptor) {
-      // On the road centre line, directly behind the coupe.
+      // On the road centre line, directly behind the coupe — close enough
+      // (7 m) that it closes to its 2.8 m stop and parks glued on the
+      // coupe's tail for the frame, instead of falling behind.
       interceptor.x = coupe.x;
-      interceptor.z = coupe.z + 10;
+      interceptor.z = coupe.z + 7;
       interceptor.heading = Math.PI;
-      interceptor.speed = 30;
+      interceptor.speed = 34;
       interceptor.sideOffset = 0;
       interceptor.mesh.position.set(interceptor.x, 0, interceptor.z);
       interceptor.mesh.rotation.y = interceptor.heading;
     }
     const airOne = game.heli;
     if (airOne) {
+      // High enough to clear the rooftops, low enough to stay inside the
+      // chase camera's vertical frame (it sits just above the lookAt line).
       airOne.angle = Math.PI / 2;
-      airOne.height = 12;
-      airOne.radius = 14;
+      airOne.height = 14;
+      airOne.radius = 15;
       airOne.frozen = true;
+    }
+    // The other two Interceptors of a 4-star fleet hold on the side avenues
+    // so the frame stays Ray, the lead Interceptor and Air One.
+    const fleet = game.policeUnits || [];
+    for (let i = 1; i < fleet.length; i++) {
+      const unit = fleet[i];
+      unit.x = i === 1 ? 42 : -42;
+      unit.z = coupe.z + 46 + i * 8;
+      unit.heading = Math.PI;
+      unit.speed = 22;
+      unit.mesh.position.set(unit.x, 0, unit.z);
+      unit.mesh.rotation.y = unit.heading;
     }
     // Clear the chase avenue: move every traffic car to the far east road
     // so the frame is just Ray, the Interceptor and Air One.
@@ -85,15 +101,16 @@ export function applyShotMode(game, shot) {
   }
 
   if (shot === 'mission') {
-    // Ray on foot at the pier, objective live, a little heat for drama.
-    player.x = 196;
-    player.z = 92;
-    player.heading = Math.PI / 2;
+    // Ray on foot near Hotel VICE, the first job's drop-off: the yellow
+    // beacon and the objective arrow are both in frame.
+    player.x = -42;
+    player.z = -14;
+    player.heading = Math.PI;
     player.group.position.set(player.x, 0, player.z);
-    player.cameraYaw = Math.PI / 2 + Math.PI;
+    player.cameraYaw = 0;
     state.missionIndex = 0;
-    state.money = 750;
-    state.wanted = 1;
+    state.money = 250;
+    state.wanted = 0;
     return 'player';
   }
 

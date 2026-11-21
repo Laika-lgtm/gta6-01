@@ -4,7 +4,7 @@
 
 export const GAME_TITLE = 'VICE POINT';
 export const SAVE_KEY = 'vicepoint-save-v1';
-export const GAME_VERSION = '1.0.0-r5s1';
+export const GAME_VERSION = '1.0.0-r5s2';
 
 // --- City layout ------------------------------------------------------------
 export const CITY = {
@@ -46,8 +46,12 @@ export const CAR_DEFS = [
 ];
 
 // Police pursuit car (not stealable in stage 1, it hunts the player).
+// Tuned so the player CAN escape: top speed 34 m/s and gentle acceleration
+// 6 m/s^2 — the fastest street car (Neon Coupe, 38) outruns it, and the
+// player's much stronger acceleration (16-18) wins the launch. A 42 m/s
+// Interceptor would be unescapable, so 34 is a hard cap, not a suggestion.
 export const POLICE_DEF = {
-  id: 'interceptor', name: 'Interceptor', color: 0x14181f, topSpeed: 36, accel: 19, brake: 34, handling: 1.0, grip: 7.0, length: 4.7, width: 2.0,
+  id: 'interceptor', name: 'Interceptor', color: 0x14181f, topSpeed: 34, accel: 6, brake: 34, handling: 1.0, grip: 7.0, length: 4.7, width: 2.0,
 };
 
 // --- Wanted -----------------------------------------------------------------
@@ -55,16 +59,34 @@ export const WANTED = {
   maxStars: 5,
   policeSpawnRadius: 42,
   policeDespawnRadius: 120,
-  chaseSpeedBoost: 1.06,
+  chaseSpeedBoost: 1.0, // chase cap equals POLICE_DEF.topSpeed: 34 m/s, never more
+  // How many Interceptors hunt the player at each wanted level.
+  policeCountByStars: { 0: 0, 1: 0, 2: 1, 3: 2, 4: 3, 5: 4 },
+  heliAtStars: 4,
+  // Wanted decays only while hidden: no police within hideRadius and no new
+  // crime for crimeMemorySeconds; then one star every decaySeconds.
+  hideRadius: 90,
+  crimeMemorySeconds: 15,
+  decaySeconds: 12,
+  // Stealing a different car while wanted sheds one star (cooldown below).
+  carSwapDecaySeconds: 20,
+  bustedFine: 100,
+  bustedTime: 1.5, // seconds cornered by police before BUSTED
+  witnessRadius: 60, // police within this see a crime happen
+  stealSeenRadius: 50, // police within this see a car being stolen
 };
 
 // --- Missions ---------------------------------------------------------------
-// Stage 1 ships the opening mission plus the mission roster the later stages
-// fill in. Each mission: an id, a title, a one-line objective and a marker.
+// The Mara Voss chain: three linked jobs, paid in order. Balances check out
+// as $250 -> $550 -> $950 -> $1,550. Types: 'reach' (arrive at the marker),
+// 'escape' (lose the cops; marker is null on purpose — the old game-breaking
+// bug was an escape objective with no target throwing every frame, so every
+// consumer of a mission must guard `mission.marker` before using it),
+// 'getaway' (arrive at the marker in one specific car).
 export const MISSIONS = [
-  { id: 'm1-pier-meet', title: 'Pier Pressure', giver: 'Mara Voss', objective: 'Meet Mara at Pier 9', marker: { x: 214, z: 96 }, reward: 500 },
-  { id: 'm2-first-ride', title: 'First Ride', giver: 'Mara Voss', objective: 'Steal any car and drive to the neon VICE sign', marker: { x: 0, z: 0 }, reward: 300 },
-  { id: 'm3-sunset-run', title: 'Sunset Run', giver: 'Deke', objective: 'Reach the beach lookout before sundown', marker: { x: 178, z: -120 }, reward: 750 },
+  { id: 'm1-pickup', title: 'The Pickup', giver: 'Mara Voss', type: 'reach', objective: "Deliver Mara's package to Hotel VICE", marker: { x: -42, z: -42 }, reward: 300 },
+  { id: 'm2-heat', title: 'Heat', giver: 'Mara Voss', type: 'escape', objective: 'Lose the cops — get your wanted level to zero', marker: null, reward: 400 },
+  { id: 'm3-getaway', title: 'The Getaway Car', giver: 'Mara Voss', type: 'getaway', objective: 'Steal the Neon Coupe and bring it to Pier 9', marker: { x: 214, z: 96 }, reward: 600, carId: 'neon' },
 ];
 
 export const START = {

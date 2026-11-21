@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { CAR_DEFS, POLICE_DEF, WANTED, CITY } from './config.js';
 import { createRng, range, pick } from './random.js';
-import { resolveCircleCollisions } from './city.js';
+import { resolveCircleCollisions, pointInsideBuildings } from './city.js';
 
 // Build one car's mesh from a definition. Returns a THREE.Group.
 export function buildCarMesh(def) {
@@ -121,14 +121,37 @@ export function spawnPolice(scene) {
   );
   bar.position.y = 1.45;
   car.mesh.add(bar);
+  car.lightBar = bar;
+  car.lightBarMat = bar.material;
   car.police = true;
   return car;
+}
+
+// Spawn one Interceptor on a road line near (px, pz), never inside a block:
+// the x snaps to the road grid and the avenue runs along z from there.
+export function spawnPoliceUnit(scene, px, pz, ox, oz) {
+  const car = spawnPolice(scene);
+  car.x = Math.round((px + ox) / CITY.blockSize) * CITY.blockSize;
+  car.z = pz + oz;
+  car.heading = oz >= 0 ? 0 : Math.PI;
+  car.speed = 18;
+  car.mesh.position.set(car.x, 0, car.z);
+  car.mesh.rotation.y = car.heading;
+  return car;
+}
+
+// Flash the roof light bar red/blue, alternating twice a second.
+export function updatePoliceLights(unit, time) {
+  if (!unit.lightBarMat) return;
+  const red = Math.floor(time * 2) % 2 === 0;
+  unit.lightBarMat.color.setHex(red ? 0xff2222 : 0x2266ff);
+  unit.lightBarMat.emissive.setHex(red ? 0xff2222 : 0x2244ff);
 }
 
 // Air One helicopter: a simple body + spinning rotor that circles the chase.
 export function spawnHelicopter(scene) {
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1c2733, roughness: 0.5, metalness: 0.4 });
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a4256, roughness: 0.5, metalness: 0.4 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 4.6), bodyMat);
   body.castShadow = true;
   group.add(body);
@@ -246,9 +269,15 @@ export function updatePoliceChase(police, playerX, playerZ, dt, colliders, other
   while (diff < -Math.PI) diff += Math.PI * 2;
   police.heading += Math.max(-1.6 * dt, Math.min(1.6 * dt, diff));
   // Standoff: brake when close so the Interceptor tails the player instead
-  // of ramming the player's car to a crawl on every frame.
-  if (dist < 8) {
-    police.speed = Math.max(0, police.speed - 25 * dt);
+  // of ramming the player's car to a crawl on every frame — a slow creep
+  // down to 2.8 m, then a full stop parked on the player. The stop matters:
+  // without it a unit that built up speed blasts straight through the
+  // BUSTED zone and the cornered timer never fills (the S4 playtest caught
+  // exactly that between two buildings).
+  if (dist < 2.8) {
+    police.speed = Math.max(0, police.speed - 30 * dt);
+  } else if (dist < 6) {
+    police.speed = Math.max(1.5, police.speed - 25 * dt);
   } else {
     police.speed = Math.min(police.def.topSpeed * WANTED.chaseSpeedBoost,
       police.speed + police.def.accel * dt);
@@ -271,6 +300,11 @@ export function updatePoliceChase(police, playerX, playerZ, dt, colliders, other
   }
   for (const other of otherCars) {
     if (other === police) continue;
+    // Closing in for the arrest (within 5 m of the player): a parked car
+    // must not shove the Interceptor back out of BUSTED range. Without this
+    // the unit settles at the push radius (~3.7 m from the parked car) and
+    // the cornered timer never fills when the player stands by their car.
+    if (dist < 5 && !other.traffic && !other.police) continue;
     const ox = police.x - other.x;
     const oz = police.z - other.z;
     const minD = (police.radius + other.radius) * 0.8;
@@ -316,13 +350,22 @@ export function updateChaseCamera(car, police, camera) {
   camera.lookAt(lookX, 1.6, lookZ);
 }
 
-// Chase camera behind a car: higher and further back than the on-foot camera.
+// Chase camera behind a car: higher and further back than the on-foot camera,
+// pulled in when a building blocks the view (same rule as on foot — a camera
+// 10.5 m behind the car would otherwise sit inside facades on tight streets).
 export function updateCarCamera(car, camera, mouse, colliders) {
   const yaw = car.heading + Math.PI;
-  const dist = 10.5;
   const height = 4.2;
-  const cx = car.x + Math.sin(yaw) * dist;
-  const cz = car.z + Math.cos(yaw) * dist;
-  camera.position.set(cx, height, cz);
+  let dist = 10.5;
+  for (let tryDist = 10.5; tryDist >= 3.5; tryDist -= 0.5) {
+    const cx = car.x + Math.sin(yaw) * tryDist;
+    const cz = car.z + Math.cos(yaw) * tryDist;
+    if (!pointInsideBuildings(cx, cz, colliders) || tryDist <= 3.51) {
+      dist = tryDist;
+      camera.position.set(cx, height, cz);
+      break;
+    }
+  }
   camera.lookAt(car.x, 1.4, car.z);
+  return dist;
 }

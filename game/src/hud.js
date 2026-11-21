@@ -19,6 +19,11 @@ export function createHud(documentRef) {
   const startEl = doc.getElementById('start-screen');
   const titleEl = doc.getElementById('start-title');
   const overEl = doc.getElementById('game-over');
+  const overFineEl = doc.getElementById('game-over-fine');
+  const pauseEl = doc.getElementById('pause-screen');
+  const arrowEl = doc.getElementById('hud-arrow');
+  const arrowCharEl = doc.getElementById('hud-arrow-char');
+  const arrowDistEl = doc.getElementById('hud-arrow-dist');
   let toastTimer = null;
 
   function showToast(text, ms) {
@@ -28,15 +33,22 @@ export function createHud(documentRef) {
     toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms || 2600);
   }
 
-  function render(state) {
+  function render(state, extra) {
     hud.classList.toggle('hidden', !state.started);
     moneyEl.textContent = `$${Math.floor(state.money).toLocaleString('en-US')}`;
     let stars = '';
     for (let i = 0; i < 5; i++) stars += i < state.wanted ? '★' : '☆';
     starsEl.textContent = stars;
     starsEl.classList.toggle('hot', state.wanted >= 3);
-    const mission = MISSIONS[state.missionIndex] || MISSIONS[0];
-    missionEl.innerHTML = `<b>${mission.title}</b> — ${mission.objective}<br><span>${mission.giver} · $${mission.reward}</span>`;
+    const mission = MISSIONS[state.missionIndex];
+    if (!mission) {
+      missionEl.innerHTML = `<b>Mara's chain complete</b> — free roam<br><span>All three jobs done · $${state.money}</span>`;
+    } else {
+      const extraLine = mission.type === 'escape'
+        ? `<br><span>★ Lose the cops to finish — hide until the stars fade</span>`
+        : (state.missionNote ? `<br><span>${state.missionNote}</span>` : '');
+      missionEl.innerHTML = `<b>${mission.title}</b> — ${mission.objective}${extraLine}<br><span>${mission.giver} · $${mission.reward}</span>`;
+    }
     speedEl.textContent = state.inCar
       ? `${Math.round(Math.abs(state.speed) * 2.237)} mph`
       : '— mph';
@@ -45,6 +57,25 @@ export function createHud(documentRef) {
     healthBarEl.style.width = `${hp}%`;
     healthBarEl.classList.toggle('low', hp <= 30);
     carEl.textContent = state.inCar ? state.carName : 'On foot — press E near a car';
+
+    // Objective arrow: points at the marker relative to the camera, with
+    // the distance in metres. Escape missions have no marker (null on
+    // purpose), so the arrow hides and the stars do the talking.
+    const marker = extra && extra.marker ? extra.marker : null;
+    if (marker && arrowEl) {
+      const dx = marker.x - state.x;
+      const dz = marker.z - state.z;
+      const bearing = Math.atan2(dx, dz);
+      const camForward = (extra.cameraYaw || 0) + Math.PI;
+      let rel = bearing - camForward;
+      while (rel > Math.PI) rel -= Math.PI * 2;
+      while (rel < -Math.PI) rel += Math.PI * 2;
+      arrowEl.classList.remove('hidden');
+      arrowCharEl.style.transform = `rotate(${rel}rad)`;
+      arrowDistEl.textContent = `${Math.round(Math.hypot(dx, dz))} m`;
+    } else if (arrowEl) {
+      arrowEl.classList.add('hidden');
+    }
   }
 
   function showStart() {
@@ -56,7 +87,8 @@ export function createHud(documentRef) {
     startEl.classList.add('hidden');
   }
 
-  function showGameOver() {
+  function showGameOver(fineText) {
+    if (overFineEl) overFineEl.textContent = fineText || '';
     overEl.classList.remove('hidden');
   }
 
@@ -64,7 +96,15 @@ export function createHud(documentRef) {
     overEl.classList.add('hidden');
   }
 
-  return { render, showToast, showStart, hideStart, showGameOver, hideGameOver };
+  function showPause() {
+    if (pauseEl) pauseEl.classList.remove('hidden');
+  }
+
+  function hidePause() {
+    if (pauseEl) pauseEl.classList.add('hidden');
+  }
+
+  return { render, showToast, showStart, hideStart, showGameOver, hideGameOver, showPause, hidePause };
 }
 
 // Save: money, missions completed, player position and current car.
