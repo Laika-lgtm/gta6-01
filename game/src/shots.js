@@ -156,15 +156,18 @@ export function stageShotMode(mode, G) {
     // A beach cruise: the Neon Coupe on the sand by the sea, palms and the
     // city skyline behind it, late sun over the water. Frozen (speed 0) so
     // the car stays in the static frame instead of rolling out of it.
+    // REVISION (stage 3): camera pulled closer and lower, and the Neon
+    // turned to a side profile — the old framing left the coupe a small
+    // speck over a huge empty sand foreground.
     const neon = G.cars.find((c) => c.def.id === 'neon');
-    neon.x = 202; neon.z = 40; neon.heading = Math.PI; neon.speed = 0;
+    neon.x = 202; neon.z = 40; neon.heading = Math.PI * 0.8; neon.speed = 0;
     neon.group.position.set(202, 0, 40);
-    neon.group.rotation.y = Math.PI;
+    neon.group.rotation.y = Math.PI * 0.8;
     G.setInCar(neon);
     state.wanted = 0;
     state.missionIndex = 0;
     state.shotFraming = {
-      cam: [218, 6, 62], look: [198, 1.5, 30],
+      cam: [213, 4.2, 53], look: [199, 1.2, 34],
     };
     return true;
   }
@@ -180,8 +183,12 @@ export function stageShotMode(mode, G) {
     if (ped) {
       // West of Ray on the open avenue, facing him — the old spot (x 3.2)
       // put the pedestrian behind the block's building wall from this camera.
-      ped.x = -2.8; ped.z = 8.0; ped.heading = 0.61; ped.down = false;
-      ped.group.position.set(-2.8, 0, 8.0);
+      // REVISION (stage 3b): (-3.0, 7.5) sat almost on the camera-Ray
+      // sightline, so the pedestrian hid behind Ray. (-4.0, 13.5) offsets
+      // perpendicular to that line (4.3 m from Ray, still < 6 m) so the
+      // pedestrian stands clearly beside him, fully visible.
+      ped.x = -4.0; ped.z = 13.5; ped.heading = 0.61; ped.down = false;
+      ped.group.position.set(-4.0, 0, 13.5);
       ped.group.rotation.set(0, ped.heading, 0);
     }
     state.shotFraming = {

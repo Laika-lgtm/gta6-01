@@ -108,7 +108,10 @@ const state = {
   heistPhase: 0, // 0 = reach the bank, 1 = lose the heat
   roadblock: null,
   lastRoadblockAt: -999,
-  roadblocksUsed: 0, // one barricade per escape job: more would stall the getaway
+  roadblocksUsed: 0, // barricades laid this job (cap 3: a dodge gets re-laid,
+  // a smash ends them — one barricade per job let the signature moment
+  // silently vanish when the player was shoved past it)
+  roadblockSmashed: false, // once smashed, the VCPD stops barricading
 };
 
 // Restore a save, except in screenshot modes (those must be deterministic).
@@ -295,6 +298,7 @@ function startMission(i) {
   state.missionFailed = false;
   state.missionNote = '';
   state.roadblocksUsed = 0;
+  state.roadblockSmashed = false;
   if (mission.type === 'timed') {
     state.missionTimer = mission.timeLimit;
   } else if (mission.type === 'escape') {
@@ -605,7 +609,7 @@ function roadblockJobActive() {
 
 function maybeSpawnRoadblock() {
   if (!roadblockJobActive() || state.wanted < 3 || state.roadblock) return;
-  if (state.roadblocksUsed >= 1) return;
+  if (state.roadblocksUsed >= 3 || state.roadblockSmashed) return;
   if (state.time - state.lastRoadblockAt < 25) return;
   const ahead = 45;
   const ax = state.x + Math.sin(state.heading) * ahead;
@@ -629,6 +633,10 @@ function updateRoadblock(dt) {
   block.timer -= dt;
   const dist = Math.hypot(state.x - block.x, state.z - block.z);
   if (block.timer <= 0 || dist > 70) {
+    // Cleared unbroken — the player dodged it or was shoved past it. The
+    // VCPD re-lays the barricade after the 25 s throttle (roadblocksUsed
+    // caps the re-lays at 3 per job); a smash never re-lays.
+    if (!block.broken) state.lastRoadblockAt = state.time;
     removeRoadblock(scene, block);
     state.roadblock = null;
     return;
@@ -643,6 +651,7 @@ function updateRoadblock(dt) {
       if (Math.hypot(state.car.x - unit.x, state.car.z - unit.z) < 4.5
         && Math.abs(state.speed) > 8) {
         smashRoadblock(block);
+        state.roadblockSmashed = true;
         state.car.speed = Math.max(state.car.speed, 18);
         addRespect(RESPECT.roadblockSmash);
         addWanted(1, 'you smashed through a roadblock');

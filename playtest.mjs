@@ -529,14 +529,43 @@ try {
     // M7 Roadblock Run: 3 stars, barricade ahead, smash through, escape.
     s = await snap(page);
     check('chain8: m7 opens at 3 stars', s.wanted === 3 && s.escapeArmed === true, `wanted=${s.wanted}`);
+    check('chain8: m7 starts in the Neon', s.inCar === true && s.carName === 'Neon Coupe', `inCar=${s.inCar} car=${s.carName}`);
     await page.evaluate(() => { const c = window.__vp.state.car; if (c) c.heading = 0; window.__vp.player.heading = 0; });
     s = await waitFor(page, (x) => x.roadblock !== null, 60000, 'roadblock spawns at 3 stars');
     check('chain8: roadblock spawns ahead', s.roadblock !== null);
     const rbDist = Math.hypot(s.roadblock.x - s.x, s.roadblock.z - s.z);
     check('chain8: roadblock is ~45m ahead', rbDist > 30 && rbDist < 60, `dist=${rbDist.toFixed(0)}m`);
+    console.log(`m7 ram: car=(${s.x.toFixed(1)},${s.z.toFixed(1)}) inCar=${s.inCar} block=(${s.roadblock.x.toFixed(1)},${s.roadblock.z.toFixed(1)}) lateral=${Math.abs(s.x - s.roadblock.x).toFixed(1)}m`);
+    // Ram the block like a driver, not a blind W-hold: steer at the block
+    // every poll (a cop ram or traffic knock can shove the car off its
+    // line), and back out if wedged. A dodge no longer ends the run — the
+    // VCPD re-lays the barricade and the ram continues at the new block.
     await page.keyboard.down('KeyW');
-    s = await waitFor(page, (x) => x.roadblock && x.roadblock.broken === true, 90000, 'roadblock smashed');
-    check('chain8: ramming the block smashes it', s.roadblock.broken === true);
+    let smashed = false;
+    let lastX = s.x, lastZ = s.z, stuckTicks = 0;
+    for (let i = 0; i < 130 && !smashed; i++) {
+      await sleep(700);
+      s = await snap(page);
+      if (s.roadblock && s.roadblock.broken) { smashed = true; break; }
+      if (s.roadblock) {
+        await page.evaluate(([bx, bz]) => {
+          const c = window.__vp.state.car;
+          if (c) c.heading = Math.atan2(bx - c.x, bz - c.z);
+        }, [s.roadblock.x, s.roadblock.z]);
+      }
+      const moved = Math.hypot(s.x - lastX, s.z - lastZ);
+      stuckTicks = moved < 1 ? stuckTicks + 1 : 0;
+      lastX = s.x; lastZ = s.z;
+      if (stuckTicks >= 5) {
+        await page.keyboard.up('KeyW');
+        await page.keyboard.down('KeyS');
+        await sleep(1200);
+        await page.keyboard.up('KeyS');
+        await page.keyboard.down('KeyW');
+        stuckTicks = 0;
+      }
+    }
+    check('chain8: ramming the block smashes it', smashed === true, `car=(${s.x.toFixed(1)},${s.z.toFixed(1)}) block=${s.roadblock ? `(${s.roadblock.x.toFixed(1)},${s.roadblock.z.toFixed(1)}) broken=${s.roadblock.broken}` : 'gone'}`);
     check('chain8: smash costs a star (3->4)', s.wanted === 4, `wanted=${s.wanted}`);
     check('chain8: smash earns respect (30->31)', s.respect === 31, `respect=${s.respect}`);
     s = await waitFor(page, (x) => x.missionIndex === 7, 600000, 'm7 completes (wanted 0)');
@@ -615,12 +644,15 @@ try {
     check('sys: pistol shot spends one round (24->23)', s.ammoPistol === 23, `ammo=${s.ammoPistol}`);
     // Shoot a cop three times: the Interceptor is disabled, heat rises.
     // Re-aim before every shot (the unit closes fast); recover from a
-    // busted by re-arming the heat.
+    // busted by re-arming the heat. The 1200 ms gap matters: the pistol
+    // cooldown is 0.28 GAME-seconds, and at SwiftShader's ~0.25x game
+    // speed a 700 ms gap swallowed every other press, so the loop never
+    // landed 3 hits on one unit before a busted reset it.
     await page.evaluate(() => window.__vp.debug.setWanted(2));
     await sleep(400);
     s = await waitFor(page, (x) => x.police.length === 1, 90000, '1 police unit at 2 stars');
     let disabled = false;
-    for (let i = 0; i < 12 && !disabled; i++) {
+    for (let i = 0; i < 20 && !disabled; i++) {
       s = await snap(page);
       if (s.busted) {
         await press(page, 'Enter');
@@ -641,9 +673,9 @@ try {
         v.player.cameraYaw = v.player.heading + Math.PI;
       });
       await press(page, 'KeyF');
-      await sleep(700);
+      await sleep(1200);
       s = await snap(page);
-      disabled = s.policeDisabled[0] === true;
+      disabled = s.policeDisabled.some(Boolean);
     }
     check('sys: 3 pistol hits disable the Interceptor', disabled === true);
     // Air One: warning shots at 4 stars, then shoot it down for $500.
@@ -665,7 +697,9 @@ try {
         v.player.cameraYaw = v.player.heading + Math.PI;
       });
       await press(page, 'KeyF');
-      await sleep(1000);
+      await sleep(1300); // pistol cooldown is 0.28 game-s; 1000 ms real
+      // swallowed presses at SwiftShader's ~0.25x game speed (same trap
+      // as the Interceptor-disable loop above)
       s = await snap(page);
       heliDown = s.heliDown === true;
     }
