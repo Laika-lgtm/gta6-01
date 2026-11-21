@@ -45,13 +45,25 @@ export function createMinimap() {
       ctx.lineTo(size, mz);
       ctx.stroke();
     }
-    // Mission marker.
-    const [tx, ty] = toMap(state.missionTarget.x, state.missionTarget.z);
-    ctx.fillStyle = '#ff4d8d';
-    ctx.font = '28px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('★', tx, ty);
+    // Mission marker — only when an objective exists.
+    if (state.missionTarget) {
+      const [tx, ty] = toMap(state.missionTarget.x, state.missionTarget.z);
+      ctx.fillStyle = '#ff4d8d';
+      ctx.font = '28px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('★', tx, ty);
+    }
+    // Pedestrians as small grey dots.
+    if (state.peds) {
+      ctx.fillStyle = '#c9c9c9';
+      for (const ped of state.peds) {
+        const [px, py] = toMap(ped.x, ped.z);
+        ctx.beginPath();
+        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     // Cars as pale dots.
     ctx.fillStyle = '#dfe8ff';
     for (const car of state.cars) {

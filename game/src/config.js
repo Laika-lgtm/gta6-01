@@ -24,6 +24,8 @@ export const PLAYER = {
   turnSpeed: 2.6,
   startX: -8,
   startZ: 8,
+  punchRange: 2.4,
+  punchCooldown: 0.45,
 };
 
 export const CAR = {
@@ -37,7 +39,11 @@ export const CAR = {
 };
 
 export const POLICE = {
-  chaseSpeed: 30,
+  // The Interceptor is fast but not faster than a good getaway car: it
+  // tops out at 34 m/s and only gains 6 m/s per second, so a clean driver
+  // can pull away and a sloppy one gets caught.
+  chaseSpeed: 34,
+  chaseAccel: 6,
   heliHeight: 46,
   heliSpeed: 18,
   catchDistance: 3.2,
@@ -55,11 +61,24 @@ export const PEDS = {
 
 export const SAVE_KEY = 'vice-point.save.v1';
 
+// Mara Voss's chain, in order. The pays are the whole economy: Ray starts
+// on $250, so the chain runs $250 -> $550 -> $950 -> $1,550.
 export const MISSIONS = [
-  { id: 'debt', title: 'DEBT COLLECTOR', text: 'Meet Marisol at Pier 9. The debt won\'t pay itself.', pay: 400 },
-  { id: 'pickup', title: 'THE PICKUP', text: 'Grab the package on Coral Way and bring it to the marina.', pay: 650 },
-  { id: 'getaway', title: 'THE GETAWAY', text: 'Lose the cops, then lay low at the safehouse on 5th.', pay: 900 },
+  { id: 'pickup', title: 'THE PICKUP', text: "Mara Voss: grab the package at Pier 9. Don't keep her waiting.", pay: 300, type: 'goto' },
+  { id: 'heat', title: 'HEAT ESCAPE', text: 'Mara Voss: the heat is on — shake the cops and reach the safehouse.', pay: 400, type: 'escape' },
+  { id: 'getaway', title: 'GETAWAY CAR', text: 'Mara Voss: steal the gold getaway car, then drive it to the marina drop.', pay: 600, type: 'getaway' },
 ];
+
+// Where each mission points: Pier 9, the safehouse in the north-west
+// corner, and the marina drop on the north-east shore.
+export const MISSION_TARGETS = [
+  { x: 296, z: 120 },
+  { x: -160, z: -160 },
+  { x: 180, z: -140 },
+];
+
+// The getaway car is the gold Marina Hatch, parked on Coral Way.
+export const GETAWAY_CAR_INDEX = 2;
 
 export const PALETTE = {
   sky: 0x87bfe8,

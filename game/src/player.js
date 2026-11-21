@@ -2,7 +2,8 @@
 // teal jacket, dark jeans, cap — with a simple walk swing; the mouse orbits
 // the camera and WASD moves relative to where the camera looks. The module
 // owns the player's position, heading, health and money, and resolves wall
-// collisions against the city's collider boxes.
+// collisions against the city's collider boxes. F throws a punch: the right
+// arm snaps forward for a beat, and the main loop decides what it hits.
 import * as THREE from 'three';
 import { PLAYER } from './config.js';
 
@@ -54,6 +55,8 @@ export function createPlayer(scene, colliders) {
     moving: false,
     speed: 0,
     walkPhase: 0,
+    punchTimer: 0,
+    punchCooldown: 0,
   };
   group.position.set(state.x, 0, state.z);
 
@@ -73,7 +76,17 @@ export function createPlayer(scene, colliders) {
     return { x: Math.max(-lim, Math.min(CITY_LIMIT_X, x)), z: Math.max(-lim, Math.min(lim, z)) };
   }
 
+  /** Start a punch swing if the cooldown has cleared; returns true. */
+  function punch() {
+    if (state.punchCooldown > 0) return false;
+    state.punchTimer = 0.32;
+    state.punchCooldown = PLAYER.punchCooldown;
+    return true;
+  }
+
   function update(dt, input) {
+    if (state.punchTimer > 0) state.punchTimer -= dt;
+    if (state.punchCooldown > 0) state.punchCooldown -= dt;
     const run = input.shift ? PLAYER.runSpeed : PLAYER.walkSpeed;
     let fx = 0;
     let fz = 0;
@@ -108,9 +121,15 @@ export function createPlayer(scene, colliders) {
     group.rotation.y = state.yaw;
     const swing = state.moving ? Math.sin(state.walkPhase) * 0.55 : 0;
     armL.rotation.x = swing;
-    armR.rotation.x = -swing;
     legL.rotation.x = -swing;
     legR.rotation.x = swing;
+    // A punch overrides the right-arm walk swing: the arm snaps forward
+    // and comes back as the timer runs down.
+    if (state.punchTimer > 0) {
+      armR.rotation.x = -1.9 * Math.min(1, state.punchTimer / 0.12 + 0.4);
+    } else {
+      armR.rotation.x = -swing;
+    }
   }
 
   function setPosition(x, z, yaw) {
@@ -128,6 +147,7 @@ export function createPlayer(scene, colliders) {
     state,
     group,
     update,
+    punch,
     setPosition,
     position: () => new THREE.Vector3(state.x, 0, state.z),
   };

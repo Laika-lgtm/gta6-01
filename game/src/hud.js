@@ -20,7 +20,9 @@ export function createHud() {
     starsEl.textContent = '★'.repeat(state.wanted) + '☆'.repeat(Math.max(0, 5 - state.wanted));
     starsEl.style.visibility = state.wanted > 0 ? 'visible' : 'hidden';
     const mission = MISSIONS[state.missionIndex % MISSIONS.length];
-    missionEl.textContent = mission.text;
+    // A mission phase can override the line — the getaway leg names the
+    // car and the drop instead of the generic mission text.
+    missionEl.textContent = state.missionText ?? mission.text;
     speedEl.textContent = String(Math.round(Math.abs(state.speed) * 2.2));
     speedLabelEl.textContent = state.driving ? `${state.carName ?? 'CAR'} — E TO EXIT` : 'ON FOOT — E NEAR A CAR';
     healthEl.style.width = `${Math.max(0, Math.min(100, state.health))}%`;

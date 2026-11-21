@@ -1,8 +1,8 @@
 // Vehicles: six stealable cars with arcade handling, ambient traffic that
-// loops the grid roads, and the police response — an Interceptor patrol car
-// and the Air One helicopter — as stubs this stage wires into the chase
-// scene, with full pursuit AI landing in the next stage. Cars are simple
-// box-built low-poly bodies with cabin, wheels and headlights.
+// drives the grid and yields to the car ahead, and the police response —
+// an Interceptor patrol car that pursues at up to 34 m/s and the Air One
+// helicopter. Cars are simple box-built low-poly bodies with cabin, wheels
+// and headlights.
 import * as THREE from 'three';
 import { CAR, CITY, PALETTE, POLICE, TRAFFIC } from './config.js';
 import { createRandom, pick, range } from './random.js';
@@ -39,6 +39,7 @@ function buildCarMesh(scene, paint, isPolice) {
     head.position.set(hx, 0.7, 2.22);
     group.add(head);
   }
+  let lights = null;
   if (isPolice) {
     const bar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 0.4), new THREE.MeshStandardMaterial({ color: 0x111111 }));
     bar.position.set(0, 1.72, -0.2);
@@ -52,9 +53,10 @@ function buildCarMesh(scene, paint, isPolice) {
     const decal = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.3, 1.2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
     decal.position.set(0, 0.72, 0);
     group.add(decal);
+    lights = { red, blue };
   }
   scene.add(group);
-  return { group, wheels };
+  return { group, wheels, lights };
 }
 
 export function createVehicles(scene, colliders) {
@@ -120,19 +122,22 @@ export function createVehicles(scene, colliders) {
   heli.visible = false;
   scene.add(heli);
 
-  // Ambient traffic: cars looping the grid avenues at a steady cruise.
+  // Ambient traffic: cars looping the grid avenues at a steady cruise,
+  // each one remembering its own cruise speed so it can slow for traffic.
   const traffic = [];
   for (let i = 0; i < TRAFFIC.count; i += 1) {
     const mesh = buildCarMesh(scene, pick(random, PALETTE.carPaint), false);
     const lane = origin + Math.floor(random() * CITY.blocks) * pitch;
     const horizontal = random() < 0.5;
+    const cruise = TRAFFIC.speed + range(random, -2, 2);
     const t = {
       mesh,
       horizontal,
       lane,
       along: range(random, -CITY.halfSize, CITY.halfSize),
       dir: random() < 0.5 ? 1 : -1,
-      speed: TRAFFIC.speed + range(random, -2, 2),
+      cruise,
+      speed: cruise,
     };
     traffic.push(t);
   }
@@ -174,7 +179,30 @@ export function createVehicles(scene, colliders) {
   }
 
   function update(dt, time, playerPos, wanted) {
+    // Traffic AI: each car checks the same lane ahead of it. A car close
+    // ahead makes it brake to a stop; one a little further ahead makes it
+    // ease off to half speed. Nobody drives through anybody — including
+    // the player: a driven car ahead in the same lane is yielded to too.
     for (const t of traffic) {
+      let speed = t.cruise;
+      for (const other of traffic) {
+        if (other === t || other.horizontal !== t.horizontal || other.lane !== t.lane || other.dir !== t.dir) continue;
+        const gap = (other.along - t.along) * t.dir;
+        if (gap > 0 && gap < 9) {
+          speed = 0;
+          break;
+        }
+        if (gap > 0 && gap < 16) speed = Math.min(speed, t.cruise * 0.5);
+      }
+      if (speed > 0) {
+        // Yield to the player when they are ahead in this car's lane.
+        const playerAlong = t.horizontal ? playerPos.x : playerPos.z;
+        const playerLane = t.horizontal ? playerPos.z : playerPos.x;
+        const gap = (playerAlong - t.along) * t.dir;
+        if (Math.abs(playerLane - (t.lane + 3.4)) < 3 && gap > 0 && gap < 10) speed = 0;
+        else if (Math.abs(playerLane - (t.lane + 3.4)) < 3 && gap > 0 && gap < 18) speed = Math.min(speed, t.cruise * 0.5);
+      }
+      t.speed = speed;
       t.along += t.dir * t.speed * dt;
       if (t.along > CITY.halfSize) t.along = -CITY.halfSize;
       if (t.along < -CITY.halfSize) t.along = CITY.halfSize;
@@ -183,9 +211,11 @@ export function createVehicles(scene, colliders) {
       t.mesh.group.position.set(x, 0, z);
       t.mesh.group.rotation.y = t.horizontal ? (t.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (t.dir > 0 ? 0 : Math.PI);
     }
-    // Police response stub: at wanted 2+ the Interceptor rolls out toward
-    // the player; at wanted 4 the helicopter joins from above. Full pursuit
-    // steering and ramming land in the next stage.
+    // Police pursuit: at wanted 2+ the Interceptor rolls out toward the
+    // player, steering to intercept. It tops out at 34 m/s and only gains
+    // 6 m/s per second, so a clean getaway car (42 m/s) can pull away —
+    // and it eases off inside 8 m so it corners onto the player instead
+    // of overshooting past them. At wanted 4 the helicopter joins.
     police.active = wanted >= 2;
     police.mesh.group.visible = true;
     if (police.active) {
@@ -197,16 +227,27 @@ export function createVehicles(scene, colliders) {
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
       police.yaw += Math.max(-1.6 * dt, Math.min(1.6 * dt, diff));
-      police.speed = Math.min(POLICE.chaseSpeed, police.speed + 12 * dt);
+      police.speed = Math.min(POLICE.chaseSpeed, police.speed + POLICE.chaseAccel * dt);
+      if (dist < 8) police.speed = Math.min(police.speed, 12);
       const nx = police.x + Math.sin(police.yaw) * police.speed * dt;
       const nz = police.z + Math.cos(police.yaw) * police.speed * dt;
       if (!collides(nx, nz)) {
         police.x = nx;
         police.z = nz;
+      } else {
+        // Stuck on a building corner: back off and re-aim next frame.
+        police.speed *= 0.4;
       }
       police.lightPhase += dt * 10;
+      const flashingRed = Math.sin(police.lightPhase) > 0;
+      if (police.mesh.lights) {
+        police.mesh.lights.red.visible = flashingRed;
+        police.mesh.lights.blue.visible = !flashingRed;
+      }
       police.mesh.group.position.set(police.x, 0, police.z);
       police.mesh.group.rotation.y = police.yaw;
+    } else if (police.speed > 0) {
+      police.speed = Math.max(0, police.speed - 10 * dt);
     }
     const heliWanted = wanted >= 4;
     heli.visible = heliWanted;
@@ -236,5 +277,5 @@ export function createVehicles(scene, colliders) {
     return best;
   }
 
-  return { cars, police, heli, drive, update, nearestCar };
+  return { cars, police, heli, traffic, drive, update, nearestCar };
 }

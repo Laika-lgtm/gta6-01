@@ -49,8 +49,12 @@ export function stageShot(name, game) {
     game.driving = car;
     player.setPosition(car.x, car.z, car.yaw);
     player.state.wanted = 4;
-    player.state.money = 1250;
+    player.state.money = 950;
     player.state.health = 82;
+    // Keep the staged game state and the HUD in agreement: the chase is
+    // the getaway leg, so the minimap beacon must point at the marina drop.
+    game.missionIndex = 2;
+    game.missionPhase = 1;
     vehicles.police.x = car.x + 2;
     vehicles.police.z = car.z - 6;
     vehicles.police.yaw = Math.PI / 2;
@@ -63,7 +67,7 @@ export function stageShot(name, game) {
     vehicles.heli.rotation.y = Math.PI / 2;
     camera.snapTo(car.x, car.z, car.yaw, 14, 7);
     return {
-      money: 1250, wanted: 4, missionIndex: 2, health: 82,
+      money: 950, wanted: 4, missionIndex: 2, health: 82,
       speedMph: 68, speedLabel: 'COMET GT — E TO EXIT',
     };
   }
@@ -73,12 +77,12 @@ export function stageShot(name, game) {
     // package in sight — the ocean and the neon behind the mission.
     player.setPosition(296, 118, Math.PI / 2);
     player.state.wanted = 1;
-    player.state.money = 650;
+    player.state.money = 250;
     player.state.health = 100;
-    game.missionIndex = 1;
+    game.missionIndex = 0;
     camera.snapTo(296, 118, Math.PI / 2);
     return {
-      money: 650, wanted: 1, missionIndex: 1, health: 100,
+      money: 250, wanted: 1, missionIndex: 0, health: 100,
       speedMph: 0, speedLabel: 'ON FOOT — E NEAR A CAR',
     };
   }
@@ -95,11 +99,12 @@ export function stageShot(name, game) {
     game.driving = car;
     player.setPosition(car.x, car.z, car.yaw);
     player.state.wanted = 0;
-    player.state.money = 900;
+    player.state.money = 550;
     player.state.health = 100;
+    game.missionIndex = 1;
     camera.snapTo(car.x, car.z, car.yaw);
     return {
-      money: 900, wanted: 0, missionIndex: 0, health: 100,
+      money: 550, wanted: 0, missionIndex: 1, health: 100,
       speedMph: 54, speedLabel: 'SUNRISE COUPE — E TO EXIT',
     };
   }

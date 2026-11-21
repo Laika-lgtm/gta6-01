@@ -135,7 +135,9 @@ export function createCity(scene) {
           group.add(glow);
           neonLights.push(glow);
         }
-        colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+        // Colliders carry their height too, so the camera can be kept out
+        // of the buildings as well as the player and the cars.
+        colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, minY: 0, maxY: h });
         built += 1;
       }
       // Sidewalk slab for the block.
