@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { CITY, NEON_SIGNS } from './config.js';
 import { createRng, range, rangeInt, pick } from './random.js';
-import { makeNeonTexture } from './world.js';
+import { makeNeonTexture, makeGroundTexture } from './world.js';
 
 const FACADE_COLORS = [
   0xffd9c0, 0xffc4d6, 0xaee3ff, 0xfff2a8, 0xc8f7c5, 0xf2d8ff,
@@ -17,23 +17,48 @@ const FACADE_COLORS = [
 
 const ROOF_COLORS = [0x5a4a3a, 0x3a4a5a, 0x6a5a6a, 0x4a5a4a];
 
-// One shared window texture: warm lit windows on a dark facade band.
-function makeWindowTexture() {
+// Four shared window textures: the same warm-lit look, but each variant
+// has its own window size, spacing and lit colour, so facades stop reading
+// as one repeated stamp. Seeded per variant, so the city is identical on
+// every load with the same seed.
+function makeWindowTexture(variant) {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 256;
   const ctx = canvas.getContext('2d');
+  const rng = createRng(9000 + variant * 131);
   ctx.fillStyle = '#20242e';
   ctx.fillRect(0, 0, 128, 256);
-  for (let y = 12; y < 244; y += 22) {
-    for (let x = 10; x < 118; x += 20) {
-      const lit = Math.random() < 0.55;
-      ctx.fillStyle = lit ? '#ffd98a' : '#2c3442';
-      ctx.fillRect(x, y, 12, 14);
+  const litColors = ['#ffd98a', '#ffd98a', '#cfe8ff', '#ffb3c8'];
+  const lit = litColors[variant % litColors.length];
+  if (variant === 2) {
+    // Horizontal strip windows: wide bands, few of them.
+    for (let y = 14; y < 244; y += 34) {
+      ctx.fillStyle = rng() < 0.6 ? lit : '#2c3442';
+      ctx.fillRect(10, y, 108, 16);
+    }
+  } else if (variant === 3) {
+    // Sparse windows, bigger panes.
+    for (let y = 16; y < 240; y += 40) {
+      for (let x = 14; x < 110; x += 36) {
+        ctx.fillStyle = rng() < 0.4 ? lit : '#2c3442';
+        ctx.fillRect(x, y, 22, 26);
+      }
+    }
+  } else {
+    const stepX = variant === 1 ? 26 : 20;
+    const stepY = variant === 1 ? 28 : 22;
+    const w = variant === 1 ? 16 : 12;
+    const h = variant === 1 ? 18 : 14;
+    const chance = variant === 1 ? 0.45 : 0.55;
+    for (let y = 12; y < 244; y += stepY) {
+      for (let x = 10; x < 118; x += stepX) {
+        ctx.fillStyle = rng() < chance ? lit : '#2c3442';
+        ctx.fillRect(x, y, w, h);
+      }
     }
   }
-  const tex = new THREE.CanvasTexture(canvas);
-  return tex;
+  return new THREE.CanvasTexture(canvas);
 }
 
 // A simple palm: curved trunk segments plus flat fan leaves.
@@ -76,24 +101,31 @@ export function buildCity(scene, seed) {
   const group = new THREE.Group();
   scene.add(group);
 
-  const windowTex = makeWindowTexture();
+  const windowTexs = [makeWindowTexture(0), makeWindowTexture(1), makeWindowTexture(2), makeWindowTexture(3)];
   const half = (CITY.blocksX - 1) / 2;
 
-  // --- Roads: dark strips BETWEEN blocks, with dashed centre lines ---------
+  // --- Roads: dark asphalt strips BETWEEN blocks, with dashed centre lines -
   // Road centres sit on the grid lines between blocks: -126, -84, -42, 0, 42,
   // 84, 126. Block centres are offset by half a block (21) from those lines,
-  // so buildings never stand in a road.
-  const roadMat = new THREE.MeshStandardMaterial({ color: 0x2c2f36, roughness: 0.95 });
+  // so buildings never stand in a road. Two asphalt materials — one tiled
+  // along the strip, one across it — so the speckle reads the same on both
+  // orientations instead of stretching into streaks.
+  const roadTexV = makeGroundTexture('asphalt');
+  roadTexV.repeat.set(2, 24);
+  const roadTexH = makeGroundTexture('asphalt');
+  roadTexH.repeat.set(24, 2);
+  const roadMatV = new THREE.MeshStandardMaterial({ map: roadTexV, roughness: 0.95 });
+  const roadMatH = new THREE.MeshStandardMaterial({ map: roadTexH, roughness: 0.95 });
   const dashMat = new THREE.MeshStandardMaterial({ color: 0xf5d76e, roughness: 0.8 });
   const span = CITY.blocksX * CITY.blockSize;
   for (let i = 0; i <= CITY.blocksX; i++) {
     const c = (i - CITY.blocksX / 2) * CITY.blockSize;
-    const vRoad = new THREE.Mesh(new THREE.PlaneGeometry(CITY.roadWidth, span + CITY.roadWidth), roadMat);
+    const vRoad = new THREE.Mesh(new THREE.PlaneGeometry(CITY.roadWidth, span + CITY.roadWidth), roadMatV);
     vRoad.rotation.x = -Math.PI / 2;
     vRoad.position.set(c, 0.03, 0);
     vRoad.receiveShadow = true;
     group.add(vRoad);
-    const hRoad = new THREE.Mesh(new THREE.PlaneGeometry(span + CITY.roadWidth, CITY.roadWidth), roadMat);
+    const hRoad = new THREE.Mesh(new THREE.PlaneGeometry(span + CITY.roadWidth, CITY.roadWidth), roadMatH);
     hRoad.rotation.x = -Math.PI / 2;
     hRoad.position.set(0, 0.03, c);
     hRoad.receiveShadow = true;
@@ -111,13 +143,16 @@ export function buildCity(scene, seed) {
   }
 
   // --- Sidewalks: pale slabs ringing each block -----------------------------
-  const walkMat = new THREE.MeshStandardMaterial({ color: 0xb8b0a0, roughness: 1 });
+  // Two tones alternating per block, so the pavement reads as poured slabs
+  // rather than one flat sheet.
+  const walkMatA = new THREE.MeshStandardMaterial({ color: 0xb8b0a0, roughness: 1 });
+  const walkMatB = new THREE.MeshStandardMaterial({ color: 0xa89e8c, roughness: 1 });
   const blockInner = CITY.blockSize - CITY.roadWidth;
   for (let bx = 0; bx < CITY.blocksX; bx++) {
     for (let bz = 0; bz < CITY.blocksZ; bz++) {
       const cx = (bx - half) * CITY.blockSize;
       const cz = (bz - half) * CITY.blockSize;
-      const slab = new THREE.Mesh(new THREE.PlaneGeometry(blockInner, blockInner), walkMat);
+      const slab = new THREE.Mesh(new THREE.PlaneGeometry(blockInner, blockInner), (bx + bz) % 2 === 0 ? walkMatA : walkMatB);
       slab.rotation.x = -Math.PI / 2;
       slab.position.set(cx, 0.04, cz);
       slab.receiveShadow = true;
@@ -143,11 +178,12 @@ export function buildCity(scene, seed) {
         const x = cx + ox;
         const z = cz + oz;
         const color = pick(rng, FACADE_COLORS);
+        const variant = rangeInt(rng, 0, 3);
         const mat = new THREE.MeshStandardMaterial({
           color,
           roughness: 0.85,
           emissive: 0xffffff,
-          emissiveMap: windowTex,
+          emissiveMap: windowTexs[variant],
           emissiveIntensity: 0.55,
         });
         const mesh = new THREE.Mesh(buildingGeo, mat);
@@ -164,8 +200,19 @@ export function buildCity(scene, seed) {
         roof.position.set(x + w * 0.2, h + 1.1, z - d * 0.15);
         roof.castShadow = true;
         group.add(roof);
+        // One building in four gets a rooftop water tank, so the skyline
+        // varies in silhouette as well as in windows.
+        if (rng() < 0.25) {
+          const tank = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.4, 1.4, 2.6, 10),
+            new THREE.MeshStandardMaterial({ color: 0x6a5a4a, roughness: 1 }),
+          );
+          tank.position.set(x - w * 0.25, h + 1.3, z + d * 0.2);
+          tank.castShadow = true;
+          group.add(tank);
+        }
         colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
-        buildings.push({ x, z, w, d, h, color });
+        buildings.push({ x, z, w, d, h, color, variant });
         placed++;
       }
     }

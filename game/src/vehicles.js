@@ -6,7 +6,7 @@
 // Manhattan steering fallback so they never get stuck on a building facade.
 
 import * as THREE from 'three';
-import { CAR_DEFS, POLICE_DEF, WANTED } from './config.js';
+import { CAR_DEFS, POLICE_DEF, WANTED, HELI } from './config.js';
 import { createRng, pick, range, rangeInt } from './random.js';
 import { resolveCircleCollisions, pointInsideBuildings } from './city.js';
 
@@ -337,24 +337,32 @@ export function createPoliceUnit(scene, x, z, heading) {
     def: POLICE_DEF, group, strobeL, strobeR,
     x, z, heading, speed: 0, police: true, traffic: false,
     manhattanTimer: 0, progressTimer: 0, lastX: x, lastZ: z,
+    shotsTaken: 0, disabled: false, disableTimer: 0,
   };
   syncMesh(unit);
   return unit;
 }
 
 // Keep the fleet at exactly `count` units, spawning new ones on a road
-// ~42 m from the player (WANTED.policeSpawnRadius).
+// ~42 m from the player (WANTED.policeSpawnRadius). The snap-to-road and
+// the ±140 clamp only apply while the player is on the grid: off the grid
+// (a getaway can run kilometres out) the clamp used to drag the spawn back
+// to the map edge, thousands of metres from the player — the unit then
+// instantly despawned past 120 m, re-armed the lostCops window, and the
+// fleet could never come back, so the heat decayed for free.
 export function ensurePoliceCount(units, scene, count, nearX, nearZ, colliders) {
   while (units.length < count) {
     const angle = Math.random() * Math.PI * 2;
     let x = nearX + Math.sin(angle) * WANTED.policeSpawnRadius;
     let z = nearZ + Math.cos(angle) * WANTED.policeSpawnRadius;
-    // Snap onto the nearest road line so the unit never spawns inside a block.
-    const snap = (v) => ROAD_LINES.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
-    if (Math.abs(x - snap(x)) < Math.abs(z - snap(z))) x = snap(x);
-    else z = snap(z);
-    x = Math.max(-140, Math.min(140, x));
-    z = Math.max(-140, Math.min(140, z));
+    if (Math.abs(nearX) <= 150 && Math.abs(nearZ) <= 150) {
+      // Snap onto the nearest road line so the unit never spawns inside a block.
+      const snap = (v) => ROAD_LINES.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
+      if (Math.abs(x - snap(x)) < Math.abs(z - snap(z))) x = snap(x);
+      else z = snap(z);
+      x = Math.max(-140, Math.min(140, x));
+      z = Math.max(-140, Math.min(140, z));
+    }
     const fixed = resolveCircleCollisions(x, z, 2.5, colliders);
     units.push(createPoliceUnit(scene, fixed.x, fixed.z, Math.atan2(nearX - fixed.x, nearZ - fixed.z)));
   }
@@ -389,6 +397,16 @@ export function nearestPoliceDistance(units, x, z) {
 export function updatePolice(units, dt, tx, tz, playerCar, colliders, time, targetSpeed) {
   const tgtSpeed = targetSpeed || 0;
   for (const unit of units) {
+    // Shot up three times: the unit is out of the chase, parked where it
+    // died, strobes still flashing until the heat dies down.
+    if (unit.disabled) {
+      unit.speed = Math.max(0, unit.speed - POLICE_DEF.brake * dt);
+      unit.disableTimer -= dt;
+      const phase = Math.floor(time * 4) % 2 === 0;
+      if (unit.strobeL) unit.strobeL.material.emissiveIntensity = phase ? 2.4 : 0.25;
+      if (unit.strobeR) unit.strobeR.material.emissiveIntensity = phase ? 0.25 : 2.4;
+      continue;
+    }
     const dx = tx - unit.x;
     const dz = tz - unit.z;
     const dist = Math.hypot(dx, dz);
@@ -457,6 +475,12 @@ export function updatePolice(units, dt, tx, tz, playerCar, colliders, time, targ
 }
 
 // --- Helicopter -------------------------------------------------------------
+// Air One: follows the player from 30 m up once the heat hits 4 stars, with
+// a spotlight cone and a ground pool of light tracking the target. At 4+
+// stars it fires warning shots — tracers that land a few metres wide of the
+// player, never on them. It can be shot down (HELI.health hits): it drops
+// out of the sky, pays $500, and is back in the air after HELI.respawnSeconds
+// if the heat is still on.
 export function createHeli(scene) {
   const group = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x14181f, roughness: 0.4, metalness: 0.5 });
@@ -491,12 +515,51 @@ export function createHeli(scene) {
   group.add(search);
   group.visible = false;
   scene.add(group);
-  return { group, rotor, search, x: 0, z: 0, y: 30, frozen: false, active: false };
+  // Pool of light on the ground under the heli, tracking the player.
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(6, 24),
+    new THREE.MeshBasicMaterial({ color: 0xfff6c0, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.y = 0.07;
+  disc.visible = false;
+  scene.add(disc);
+  return {
+    group, rotor, search, disc,
+    x: 0, z: 0, y: 30, frozen: false, active: false,
+    health: HELI.health, down: false, downTimer: 0,
+    shotTimer: HELI.warningEvery, warningShots: 0,
+  };
 }
 
-export function updateHeli(heli, dt, tx, tz, active, time) {
+// fx is the weapon tracer pool ({fireTracer} is internal to weapons.js —
+// pass the pool plus a tracer function); onWarning() is called per warning
+// shot so the caller can play the sound. Both are optional.
+export function updateHeli(heli, dt, tx, tz, active, time, tracer, onWarning) {
   heli.active = active;
+  // Shot down: drop out of the sky, sit on the ground, then climb back up
+  // once the respawn window has passed — but only while the heat is on.
+  if (heli.down) {
+    heli.y = Math.max(1.2, heli.y - dt * 22);
+    heli.rotor.rotation.y += dt * 4;
+    heli.group.position.set(heli.x, heli.y, heli.z);
+    heli.group.visible = active;
+    heli.search.material.opacity = 0;
+    heli.disc.visible = false;
+    if (active) {
+      heli.downTimer += dt;
+      if (heli.downTimer >= HELI.respawnSeconds) {
+        heli.down = false;
+        heli.health = HELI.health;
+        heli.downTimer = 0;
+        heli.y = 30;
+        heli.shotTimer = HELI.warningEvery;
+      }
+    }
+    return;
+  }
   heli.group.visible = active;
+  heli.disc.visible = active;
   if (!active) return;
   heli.rotor.rotation.y += dt * 22;
   if (!heli.frozen) {
@@ -507,4 +570,105 @@ export function updateHeli(heli, dt, tx, tz, active, time) {
   heli.y = 30 + Math.sin(time * 1.3) * 0.8;
   heli.group.position.set(heli.x, heli.y, heli.z);
   heli.group.rotation.y = Math.atan2(tx - heli.x, tz - heli.z);
+  // Spotlight: brighter cone plus a pool of light on the ground at the
+  // player's feet, so the beam reads even in daylight.
+  heli.search.material.opacity = 0.3;
+  heli.disc.material.opacity = 0.2;
+  heli.disc.position.set(tx, 0.07, tz);
+  // Warning shots at 4+ stars: a tracer that lands a few metres wide of the
+  // player — a warning, never a hit.
+  heli.shotTimer -= dt;
+  if (heli.shotTimer <= 0) {
+    heli.shotTimer = HELI.warningEvery;
+    heli.warningShots += 1;
+    if (tracer) {
+      const ox = (Math.random() - 0.5) * 10;
+      const oz = (Math.random() - 0.5) * 10;
+      tracer(
+        { x: heli.x, y: heli.y - 1, z: heli.z },
+        { x: tx + ox, y: 0.2, z: tz + oz },
+      );
+    }
+    if (onWarning) onWarning();
+  }
+}
+
+// A hit on the heli: returns true when that hit brings it down.
+export function damageHeli(heli) {
+  if (!heli.active || heli.down) return false;
+  heli.health -= 1;
+  if (heli.health <= 0) {
+    heli.down = true;
+    heli.downTimer = 0;
+    return true;
+  }
+  return false;
+}
+
+// --- Tail target ------------------------------------------------------------
+// The mark for 'Tail the Mark': an orange sedan looping the inner rectangle
+// of avenues at 11 m/s, with a purple beacon cone above it so it reads from
+// across the city. It drives its loop from boot (ambient traffic with a
+// job), and the mission just asks Ray to get on its bumper.
+export const TAIL_DEF = {
+  id: 'mark', name: 'Mark', color: 0xff7a1a, topSpeed: 13, accel: 8, brake: 20, handling: 0.8, grip: 6, length: 4.4, width: 1.9,
+};
+const TAIL_LOOP = [[42, 42], [42, -42], [-42, -42], [-42, 42]];
+
+export function createTailTarget(scene) {
+  const { group } = buildCarMesh(TAIL_DEF, false);
+  scene.add(group);
+  const beacon = new THREE.Mesh(
+    new THREE.ConeGeometry(0.9, 2.2, 12),
+    new THREE.MeshBasicMaterial({ color: 0xc44dff, transparent: true, opacity: 0.85 }),
+  );
+  beacon.position.y = 3.4;
+  beacon.rotation.x = Math.PI;
+  group.add(beacon);
+  const car = {
+    def: TAIL_DEF, group, beacon,
+    x: 42, z: 42, heading: Math.PI, speed: 11,
+    stolen: false, parked: false, traffic: false, police: false,
+    waypoint: 1,
+  };
+  group.position.set(42, 0, 42);
+  group.rotation.y = Math.PI;
+  return car;
+}
+
+export function updateTailTarget(car, dt, colliders) {
+  const [wx, wz] = TAIL_LOOP[car.waypoint];
+  const dx = wx - car.x;
+  const dz = wz - car.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist < 3) {
+    car.waypoint = (car.waypoint + 1) % TAIL_LOOP.length;
+    return;
+  }
+  const desired = Math.atan2(dx, dz);
+  let diff = desired - car.heading;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  car.heading += Math.max(-1.6 * dt, Math.min(1.6 * dt, diff));
+  car.x += Math.sin(car.heading) * car.speed * dt;
+  car.z += Math.cos(car.heading) * car.speed * dt;
+  const fixed = resolveCircleCollisions(car.x, car.z, car.def.length * 0.35, colliders);
+  car.x = fixed.x;
+  car.z = fixed.z;
+  car.group.position.set(car.x, 0, car.z);
+  car.group.rotation.y = car.heading;
+  car.beacon.rotation.y += dt * 2;
+}
+
+// Spawn a fresh street car into the world (garage buy / retrieve). Returns
+// a car object in the same shape as the parked street cars.
+export function spawnStreetCar(scene, def, x, z, heading) {
+  const { group } = buildCarMesh(def, false);
+  scene.add(group);
+  const car = {
+    def, group, x, z, heading,
+    speed: 0, stolen: false, parked: false, traffic: false, police: false,
+  };
+  syncMesh(car);
+  return car;
 }

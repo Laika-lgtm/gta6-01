@@ -63,6 +63,26 @@ async function snap(page) {
       ped0: v.pedestrians[0] ? { x: v.pedestrians[0].x, z: v.pedestrians[0].z, down: v.pedestrians[0].down } : null,
       mara: { x: v.mara.x, z: v.mara.z },
       shotFraming: !!s.shotFraming, version: v.version,
+      // Stage 4 fields.
+      missionsN: v.missions.length,
+      weapon: v.weapons.weapon,
+      ammoPistol: v.weapons.ammo.pistol,
+      ammoSmg: v.weapons.ammo.smg,
+      respect: s.respect,
+      garageCars: [...s.garageCars],
+      garageBuys: s.garageBuys,
+      roadblock: s.roadblock ? { x: s.roadblock.x, z: s.roadblock.z, broken: s.roadblock.broken } : null,
+      heliHealth: v.heli.health,
+      heliDown: v.heli.down,
+      heliWarningShots: v.heli.warningShots,
+      missionTimer: s.missionTimer,
+      surveyStep: s.surveyStep,
+      heistPhase: s.heistPhase,
+      tailTarget: { x: v.tailTarget.x, z: v.tailTarget.z },
+      radioStation: v.audio.stationName(),
+      radioIndex: v.audio.radioStation,
+      variants: new Set(v.city.buildings.map((b) => b.variant)).size,
+      policeDisabled: v.police.map((u) => !!u.disabled),
     };
   });
 }
@@ -112,7 +132,7 @@ try {
     const s0 = await snap(page);
     check('boot: title VICE POINT', (await page.title()).includes('VICE POINT'));
     check('boot: __vp handle exists', !!s0);
-    check('boot: version 1.0.0-r5s2', s0.version === '1.0.0-r5s2');
+    check('boot: version 1.0.0-r5s4', s0.version === '1.0.0-r5s4');
     check('boot: money $250', s0.money === 250);
     check('boot: missionIndex 0', s0.missionIndex === 0);
     check('boot: wanted 0', s0.wanted === 0);
@@ -433,7 +453,292 @@ try {
     await ctx.close();
   }
 
-  // ============ PAGES E-H — four ?shot= modes, 1280x720 JPEGs ============
+  // ============ PAGE E — full 8-mission Mara Voss chain ($250 -> $8,550) ============
+  {
+    const { ctx, page, errors } = await newPage(browser, 480, 270, '?lowfx=1&seed=1');
+    await startGame(page);
+    let s = await snap(page);
+    check('chain8: game started on page E', s.started === true);
+    check('chain8: 8 missions in the chain', s.missionsN === 8);
+    check('chain8: HUD weapon FISTS', (await page.textContent('#hud-weapon')).includes('FISTS'));
+    check('chain8: HUD respect 0', (await page.textContent('#hud-respect')).includes('0'));
+    // M1 The Pickup.
+    await page.evaluate(() => window.__vp.debug.tp(-42, -30));
+    await page.keyboard.down('KeyW');
+    s = await waitFor(page, (x) => x.missionIndex === 1, 60000, 'm1 completes');
+    await page.keyboard.up('KeyW');
+    check('chain8: m1 completes -> missionIndex 1', s.missionIndex === 1);
+    check('chain8: m1 pays +$300 (250->550)', s.money === 550, `money=${s.money}`);
+    check('chain8: respect 5 after m1', s.respect === 5, `respect=${s.respect}`);
+    check('chain8: HUD respect shows 5', (await page.textContent('#hud-respect')).includes('5'));
+    // M2 Heat: clean escape in the Neon.
+    await page.evaluate(() => window.__vp.debug.enterCarById('neon'));
+    await sleep(500);
+    s = await snap(page);
+    check('chain8: Heat starts hot (2 stars)', s.wanted === 2 && s.escapeArmed === true, `wanted=${s.wanted} armed=${s.escapeArmed}`);
+    check('chain8: radio shows VICE FM in car', (await page.textContent('#hud-radio')).includes('VICE FM'));
+    await page.keyboard.down('KeyW');
+    s = await waitFor(page, (x) => x.police.length === 0 && x.lostCops === true, 240000, 'outrun fleet in Heat');
+    check('chain8: fleet outrun in Heat', s.lostCops === true);
+    s = await waitFor(page, (x) => x.missionIndex === 2, 180000, 'Heat completes (wanted 0)');
+    await page.keyboard.up('KeyW');
+    check('chain8: m2 pays +$400 (550->950)', s.money === 950, `money=${s.money}`);
+    check('chain8: respect 10 after m2', s.respect === 10, `respect=${s.respect}`);
+    // M3 The Getaway Car: Neon to Pier 9.
+    await page.evaluate(() => window.__vp.debug.tp(214, 88));
+    s = await waitFor(page, (x) => x.missionIndex === 3, 30000, 'm3 completes');
+    check('chain8: m3 pays +$600 (950->1550)', s.money === 1550, `money=${s.money}`);
+    check('chain8: respect 15 after m3', s.respect === 15, `respect=${s.respect}`);
+    // M4 The Drop (timed): first let the clock run out, then deliver.
+    s = await snap(page);
+    check('chain8: m4 clock starts at 75s', s.missionTimer > 60 && s.missionTimer <= 75, `timer=${s.missionTimer}`);
+    check('chain8: HUD shows the countdown', (await page.textContent('#hud-mission')).includes('TIME'));
+    await page.evaluate(() => window.__vp.debug.setMissionTimer(0.4));
+    await sleep(4000);
+    s = await snap(page);
+    check('chain8: m4 timeout flags failed, clock resets', s.missionFailed === true && s.missionTimer > 60, `failed=${s.missionFailed} timer=${s.missionTimer}`);
+    check('chain8: m4 still current after timeout', s.missionIndex === 3);
+    await page.evaluate(() => window.__vp.debug.tp(84, -78));
+    s = await waitFor(page, (x) => x.missionIndex === 4, 30000, 'm4 completes');
+    check('chain8: m4 pays +$800 (1550->2350)', s.money === 2350, `money=${s.money}`);
+    check('chain8: respect 20 after m4', s.respect === 20, `respect=${s.respect}`);
+    // M5 Tail the Mark: pull onto the orange car's bumper (retry the teleport
+    // a few times — the mark keeps driving at 11 m/s).
+    let tailDone = false;
+    for (let i = 0; i < 6 && !tailDone; i++) {
+      const tgt = (await snap(page)).tailTarget;
+      await page.evaluate(([x, z]) => window.__vp.debug.tp(x + 2, z), [tgt.x, tgt.z]);
+      await sleep(1200);
+      s = await snap(page);
+      tailDone = s.missionIndex === 5;
+    }
+    check('chain8: m5 tail completes on the mark', tailDone === true);
+    check('chain8: m5 pays +$1200 (2350->3550)', s.money === 3550, `money=${s.money}`);
+    check('chain8: respect 25 after m5', s.respect === 25, `respect=${s.respect}`);
+    // M6 The Survey: three photo spots in order.
+    await page.evaluate(() => window.__vp.debug.tp(-84, 78));
+    s = await waitFor(page, (x) => x.surveyStep === 1, 30000, 'survey spot 1');
+    check('chain8: survey spot 1/3 snaps', s.surveyStep === 1);
+    await page.evaluate(() => window.__vp.debug.tp(0, -78));
+    s = await waitFor(page, (x) => x.surveyStep === 2, 30000, 'survey spot 2');
+    check('chain8: survey spot 2/3 snaps', s.surveyStep === 2);
+    await page.evaluate(() => window.__vp.debug.tp(126, 36));
+    s = await waitFor(page, (x) => x.missionIndex === 6, 30000, 'm6 completes');
+    check('chain8: m6 pays +$1400 (3550->4950)', s.money === 4950, `money=${s.money}`);
+    check('chain8: respect 30 after m6 (gate 20 passed)', s.respect === 30, `respect=${s.respect}`);
+    // M7 Roadblock Run: 3 stars, barricade ahead, smash through, escape.
+    s = await snap(page);
+    check('chain8: m7 opens at 3 stars', s.wanted === 3 && s.escapeArmed === true, `wanted=${s.wanted}`);
+    await page.evaluate(() => { const c = window.__vp.state.car; if (c) c.heading = 0; window.__vp.player.heading = 0; });
+    s = await waitFor(page, (x) => x.roadblock !== null, 60000, 'roadblock spawns at 3 stars');
+    check('chain8: roadblock spawns ahead', s.roadblock !== null);
+    const rbDist = Math.hypot(s.roadblock.x - s.x, s.roadblock.z - s.z);
+    check('chain8: roadblock is ~45m ahead', rbDist > 30 && rbDist < 60, `dist=${rbDist.toFixed(0)}m`);
+    await page.keyboard.down('KeyW');
+    s = await waitFor(page, (x) => x.roadblock && x.roadblock.broken === true, 90000, 'roadblock smashed');
+    check('chain8: ramming the block smashes it', s.roadblock.broken === true);
+    check('chain8: smash costs a star (3->4)', s.wanted === 4, `wanted=${s.wanted}`);
+    check('chain8: smash earns respect (30->31)', s.respect === 31, `respect=${s.respect}`);
+    s = await waitFor(page, (x) => x.missionIndex === 7, 600000, 'm7 completes (wanted 0)');
+    await page.keyboard.up('KeyW');
+    check('chain8: m7 pays +$1600 (4950->6550)', s.money === 6550, `money=${s.money}`);
+    check('chain8: respect 36 after m7', s.respect === 36, `respect=${s.respect}`);
+    // M8 The Big Heist: reach the bank, then lose the heat (gate 30 passed).
+    await page.evaluate(() => window.__vp.debug.tp(-126, 120));
+    s = await waitFor(page, (x) => x.heistPhase === 1, 30000, 'heist phase 1 (bank hit)');
+    check('chain8: heist phase 1 opens at 3 stars', s.heistPhase === 1 && s.wanted === 3, `phase=${s.heistPhase} wanted=${s.wanted}`);
+    await page.evaluate(() => { const c = window.__vp.state.car; if (c) c.heading = 0; window.__vp.player.heading = 0; });
+    await page.keyboard.down('KeyW');
+    s = await waitFor(page, (x) => x.missionIndex === 8, 600000, 'm8 completes (wanted 0)');
+    await page.keyboard.up('KeyW');
+    check('chain8: m8 pays +$2000 (6550->8550)', s.money === 8550, `money=${s.money}`);
+    check('chain8: all eight jobs done', s.missionsDone.length === 8);
+    check('chain8: respect 41+ at the end of the chain', s.respect >= 41, `respect=${s.respect}`);
+    check('chain8: HUD says chain complete', (await page.textContent('#hud-mission')).includes('chain complete'));
+    // Save / load: the full chain survives a reload, respect included.
+    const savedMoney = s.money, savedRespect = s.respect;
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => !!window.__vp, null, { timeout: 30000 });
+    await sleep(1500);
+    s = await snap(page);
+    check('chain8: money $8550 survives reload', s.money === savedMoney, `money=${s.money}`);
+    check('chain8: missionIndex 8 survives reload', s.missionIndex === 8);
+    check('chain8: respect survives reload', s.respect === savedRespect, `respect=${s.respect}`);
+    check('chain8: no console/page errors on page E', errors.length === 0, errors.join(' | ').slice(0, 200));
+    await ctx.close();
+  }
+
+  // ============ PAGE F — stage-4 systems: weapons, heli, radio, garage ============
+  {
+    const { ctx, page, errors } = await newPage(browser, 480, 270, '?lowfx=1&seed=1');
+    await startGame(page);
+    let s = await snap(page);
+    check('sys: 8 missions in the chain', s.missionsN === 8);
+    check('sys: 3+ facade variants in the city', s.variants >= 3, `variants=${s.variants}`);
+    check('sys: HUD weapon starts FISTS', (await page.textContent('#hud-weapon')).includes('FISTS'));
+    // Weapon wheel: Q cycles, 1/2/3 pick directly.
+    await press(page, 'KeyQ');
+    await sleep(400);
+    s = await snap(page);
+    check('sys: Q switches to PISTOL', s.weapon === 'pistol' && (await page.textContent('#hud-weapon')).includes('PISTOL'));
+    check('sys: pistol starts with 24 rounds', s.ammoPistol === 24, `ammo=${s.ammoPistol}`);
+    await press(page, 'Digit3');
+    await sleep(400);
+    s = await snap(page);
+    check('sys: 3 switches to SMG', s.weapon === 'smg' && (await page.textContent('#hud-weapon')).includes('SMG'));
+    check('sys: SMG starts with 60 rounds', s.ammoSmg === 60, `ammo=${s.ammoSmg}`);
+    await press(page, 'Digit1');
+    await sleep(400);
+    s = await snap(page);
+    check('sys: 1 switches back to FISTS', s.weapon === 'fists');
+    await press(page, 'Digit2');
+    await sleep(400);
+    s = await snap(page);
+    check('sys: 2 switches to PISTOL', s.weapon === 'pistol');
+    // Shoot a pedestrian: it goes down, one round is spent. Aim at the
+    // ped's live position right before the shot — it keeps walking.
+    await page.evaluate(() => {
+      const v = window.__vp;
+      const ped = v.pedestrians[0];
+      v.debug.tp(ped.x, ped.z + 1.5);
+    });
+    await page.evaluate(() => {
+      const v = window.__vp;
+      const ped = v.pedestrians[0];
+      v.player.heading = Math.atan2(ped.x - v.player.x, ped.z - v.player.z);
+      v.player.cameraYaw = v.player.heading + Math.PI;
+    });
+    await press(page, 'KeyF');
+    await sleep(2500);
+    s = await snap(page);
+    check('sys: pistol shot knocks the pedestrian down', s.ped0.down === true, `down=${s.ped0.down}`);
+    check('sys: pistol shot spends one round (24->23)', s.ammoPistol === 23, `ammo=${s.ammoPistol}`);
+    // Shoot a cop three times: the Interceptor is disabled, heat rises.
+    // Re-aim before every shot (the unit closes fast); recover from a
+    // busted by re-arming the heat.
+    await page.evaluate(() => window.__vp.debug.setWanted(2));
+    await sleep(400);
+    s = await waitFor(page, (x) => x.police.length === 1, 90000, '1 police unit at 2 stars');
+    let disabled = false;
+    for (let i = 0; i < 12 && !disabled; i++) {
+      s = await snap(page);
+      if (s.busted) {
+        await press(page, 'Enter');
+        await sleep(800);
+        await page.evaluate(() => window.__vp.debug.setWanted(2));
+        s = await waitFor(page, (x) => x.police.length >= 1, 60000, 'police unit returns');
+        continue;
+      }
+      if (!s.police.length) {
+        s = await waitFor(page, (x) => x.police.length >= 1, 60000, 'police unit present');
+        continue;
+      }
+      await page.evaluate(() => {
+        const v = window.__vp;
+        const u = v.police[0];
+        if (!u) return;
+        v.player.heading = Math.atan2(u.x - v.player.x, u.z - v.player.z);
+        v.player.cameraYaw = v.player.heading + Math.PI;
+      });
+      await press(page, 'KeyF');
+      await sleep(700);
+      s = await snap(page);
+      disabled = s.policeDisabled[0] === true;
+    }
+    check('sys: 3 pistol hits disable the Interceptor', disabled === true);
+    // Air One: warning shots at 4 stars, then shoot it down for $500.
+    // Hold W the whole time — cornered and still is BUSTED.
+    const moneyBeforeHeli = (await snap(page)).money;
+    await page.evaluate(() => window.__vp.debug.setWanted(4));
+    await sleep(400);
+    s = await waitFor(page, (x) => x.heliActive === true, 60000, 'heli active at 4 stars');
+    check('sys: heli active at 4 stars', s.heliActive === true);
+    await page.keyboard.down('KeyW');
+    s = await waitFor(page, (x) => x.heliWarningShots >= 1, 30000, 'heli warning shot');
+    check('sys: heli fires warning shots at 4 stars', s.heliWarningShots >= 1, `shots=${s.heliWarningShots}`);
+    let heliDown = false;
+    for (let i = 0; i < 7 && !heliDown; i++) {
+      await page.evaluate(() => {
+        const v = window.__vp;
+        const h = v.heli;
+        v.player.heading = Math.atan2(h.x - v.player.x, h.z - v.player.z);
+        v.player.cameraYaw = v.player.heading + Math.PI;
+      });
+      await press(page, 'KeyF');
+      await sleep(1000);
+      s = await snap(page);
+      heliDown = s.heliDown === true;
+    }
+    await page.keyboard.up('KeyW');
+    check('sys: 5 pistol hits bring Air One down', heliDown === true, `health=${s.heliHealth}`);
+    check('sys: heli down pays +$500', s.money === moneyBeforeHeli + 500, `money=${s.money} before=${moneyBeforeHeli}`);
+    check('sys: heli down earns respect +2', s.respect === 2, `respect=${s.respect}`);
+    // Radio: three stations in the car, silent on foot.
+    await page.evaluate(() => window.__vp.debug.setWanted(0));
+    await sleep(500);
+    await page.evaluate(() => window.__vp.debug.enterCarById('sunset'));
+    await sleep(500);
+    s = await snap(page);
+    check('sys: radio starts on VICE FM', s.radioStation === 'VICE FM' && (await page.textContent('#hud-radio')).includes('VICE FM'));
+    await press(page, 'KeyR');
+    await sleep(400);
+    s = await snap(page);
+    check('sys: R switches to NEON 98', s.radioStation === 'NEON 98', `station=${s.radioStation}`);
+    await press(page, 'KeyR');
+    await sleep(400);
+    s = await snap(page);
+    check('sys: R switches to PIRATE 107', s.radioStation === 'PIRATE 107', `station=${s.radioStation}`);
+    await press(page, 'KeyR');
+    await sleep(400);
+    s = await snap(page);
+    check('sys: R cycles back to VICE FM', s.radioStation === 'VICE FM', `station=${s.radioStation}`);
+    await press(page, 'KeyE');
+    await sleep(500);
+    check('sys: radio silent on foot', (await page.textContent('#hud-radio')).trim() === '');
+    // Garage: approach shed, buy, store (sheds a star), retrieve, discount.
+    await page.evaluate(() => { window.__vp.debug.setMoney(2000); window.__vp.debug.setWanted(2); });
+    await sleep(400);
+    await page.evaluate(() => window.__vp.debug.tp(160, 0));
+    await sleep(600);
+    s = await snap(page);
+    check('sys: garage approach sheds a star (2->1)', s.wanted === 1, `wanted=${s.wanted}`);
+    await press(page, 'KeyG');
+    await sleep(600);
+    s = await snap(page);
+    check('sys: G buys a car for $800 (2000->1200)', s.money === 1200 && s.inCar === true, `money=${s.money} inCar=${s.inCar}`);
+    check('sys: first buy is the Sunset GT', s.carName === 'Sunset GT', `car=${s.carName}`);
+    await page.evaluate(() => window.__vp.debug.setWanted(1));
+    await sleep(300);
+    await press(page, 'KeyG');
+    await sleep(600);
+    s = await snap(page);
+    check('sys: G stores the car in the garage', s.garageCars.length === 1 && s.inCar === false, `garage=${JSON.stringify(s.garageCars)} inCar=${s.inCar}`);
+    check('sys: storing sheds a star (1->0)', s.wanted === 0, `wanted=${s.wanted}`);
+    await press(page, 'KeyG');
+    await sleep(600);
+    s = await snap(page);
+    check('sys: G retrieves the stored car', s.garageCars.length === 0 && s.inCar === true && s.carName === 'Sunset GT', `garage=${JSON.stringify(s.garageCars)} car=${s.carName}`);
+    await press(page, 'KeyE');
+    await sleep(400);
+    await page.evaluate(() => { window.__vp.debug.setMoney(2000); window.__vp.debug.setRespect(50); window.__vp.debug.tp(160, 0); });
+    await sleep(300);
+    await press(page, 'KeyG');
+    await sleep(600);
+    s = await snap(page);
+    check('sys: Respect 50 buys at $600 (2000->1400)', s.money === 1400, `money=${s.money}`);
+    check('sys: second buy is the Marlin S', s.carName === 'Marlin S', `car=${s.carName}`);
+    // Roadblock: a barricade appears ahead at 3 stars on a roadblock job.
+    await page.evaluate(() => window.__vp.debug.setMission(6));
+    await sleep(400);
+    s = await snap(page);
+    check('sys: Roadblock Run opens at 3 stars', s.wanted === 3 && s.escapeArmed === true, `wanted=${s.wanted}`);
+    s = await waitFor(page, (x) => x.roadblock !== null, 60000, 'roadblock spawns');
+    check('sys: roadblock spawns during the job', s.roadblock !== null);
+    check('sys: no console/page errors on page F', errors.length === 0, errors.join(' | ').slice(0, 200));
+    await ctx.close();
+  }
+
+  // ============ PAGES G-J — four ?shot= modes, 1280x720 JPEGs ============
   const shots = [
     { name: '1-chase.jpg', query: '?shot=chase&seed=1&lowfx=1' },
     { name: '2-mission.jpg', query: '?shot=mission&seed=1&lowfx=1' },

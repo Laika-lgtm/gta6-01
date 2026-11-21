@@ -15,6 +15,9 @@ export function createHud(documentRef) {
   const healthEl = doc.getElementById('hud-health');
   const healthBarEl = doc.getElementById('hud-health-bar');
   const carEl = doc.getElementById('hud-car');
+  const weaponEl = doc.getElementById('hud-weapon');
+  const respectEl = doc.getElementById('hud-respect');
+  const radioEl = doc.getElementById('hud-radio');
   const toastEl = doc.getElementById('hud-toast');
   const startEl = doc.getElementById('start-screen');
   const titleEl = doc.getElementById('start-title');
@@ -42,12 +45,35 @@ export function createHud(documentRef) {
     starsEl.classList.toggle('hot', state.wanted >= 3);
     const mission = MISSIONS[state.missionIndex];
     if (!mission) {
-      missionEl.innerHTML = `<b>Mara's chain complete</b> — free roam<br><span>All three jobs done · $${state.money}</span>`;
+      missionEl.innerHTML = `<b>Mara's chain complete</b> — free roam<br><span>All eight jobs done · $${state.money}</span>`;
     } else {
-      const extraLine = mission.type === 'escape'
-        ? `<br><span>★ Lose the cops to finish — hide until the stars fade</span>`
-        : (state.missionNote ? `<br><span>${state.missionNote}</span>` : '');
+      let extraLine = '';
+      if (mission.type === 'escape') {
+        extraLine = `<br><span>★ Lose the cops to finish — hide until the stars fade</span>`;
+      } else if (mission.type === 'timed') {
+        extraLine = `<br><span>TIME ${Math.max(0, Math.ceil(state.missionTimer || 0))}s — beat the clock</span>`;
+      } else if (mission.type === 'survey') {
+        extraLine = `<br><span>Photo spot ${(state.surveyStep || 0) + 1} of 3</span>`;
+      } else if (mission.type === 'tail') {
+        extraLine = `<br><span>Get within 9 m of the orange mark</span>`;
+      } else if (mission.type === 'heist' && state.heistPhase === 1) {
+        extraLine = `<br><span>★ Now lose the cops to finish</span>`;
+      }
+      if (state.missionNote) extraLine += `<br><span>${state.missionNote}</span>`;
+      if (mission.minRespect && (state.respect || 0) < mission.minRespect) {
+        extraLine += `<br><span>Needs Respect ${mission.minRespect} — earn it first</span>`;
+      }
       missionEl.innerHTML = `<b>${mission.title}</b> — ${mission.objective}${extraLine}<br><span>${mission.giver} · $${mission.reward}</span>`;
+    }
+    if (respectEl) respectEl.textContent = `RESPECT ${state.respect || 0}`;
+    if (weaponEl) {
+      const w = state.weapon || 'fists';
+      weaponEl.textContent = w === 'fists'
+        ? 'FISTS'
+        : `${w.toUpperCase()} · ${state.ammo != null ? state.ammo : '—'}`;
+    }
+    if (radioEl) {
+      radioEl.textContent = state.inCar ? `♪ ${state.radioStation || 'VICE FM'}` : '';
     }
     speedEl.textContent = state.inCar
       ? `${Math.round(Math.abs(state.speed) * 2.237)} mph`
@@ -107,7 +133,8 @@ export function createHud(documentRef) {
   return { render, showToast, showStart, hideStart, showGameOver, hideGameOver, showPause, hidePause };
 }
 
-// Save: money, missions completed, player position and current car.
+// Save: money, missions completed, player position and current car, plus
+// the stage-4 progression: respect, garage stock, weapon and ammo.
 export function saveGame(state) {
   try {
     const data = {
@@ -119,6 +146,11 @@ export function saveGame(state) {
       z: state.z,
       heading: state.heading,
       wanted: state.wanted,
+      respect: state.respect || 0,
+      garageCars: state.garageCars || [],
+      garageBuys: state.garageBuys || 0,
+      weapon: state.weapon || 'fists',
+      ammo: state.ammo || { pistol: 24, smg: 60 },
       savedAt: Date.now(),
     };
     window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -143,6 +175,11 @@ export function loadGame() {
       z: data.z ?? START.position.z,
       heading: data.heading ?? START.heading,
       wanted: data.wanted || 0,
+      respect: data.respect || 0,
+      garageCars: Array.isArray(data.garageCars) ? data.garageCars : [],
+      garageBuys: data.garageBuys || 0,
+      weapon: data.weapon || 'fists',
+      ammo: data.ammo || { pistol: 24, smg: 60 },
     };
   } catch {
     return null;

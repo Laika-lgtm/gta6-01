@@ -45,10 +45,15 @@ export function createMinimap(canvas) {
 
     // Mission marker: pulsing yellow diamond. Escape missions have no
     // marker (null on purpose), so guard it — an unguarded marker read here
-    // used to throw every frame and make the mission impossible.
+    // used to throw every frame and make the mission impossible. The caller
+    // passes the live marker (survey jobs point at the next photo spot),
+    // falling back to the mission's own marker.
     const mission = MISSIONS[state.missionIndex];
-    if (mission && mission.marker) {
-      const [mx, mz] = worldToMap(mission.marker.x, mission.marker.z);
+    const marker = state.marker !== undefined
+      ? state.marker
+      : (mission && mission.marker ? mission.marker : null);
+    if (marker) {
+      const [mx, mz] = worldToMap(marker.x, marker.z);
       const pulse = 5 + Math.sin(time * 4) * 2;
       ctx.fillStyle = '#ffd23f';
       ctx.beginPath();
@@ -61,6 +66,36 @@ export function createMinimap(canvas) {
       ctx.strokeStyle = '#7a5b00';
       ctx.lineWidth = 1.5;
       ctx.stroke();
+    }
+
+    // Tail target: magenta dot on the mark's car.
+    if (state.tailTarget && mission && mission.type === 'tail') {
+      const [tx, tz] = worldToMap(state.tailTarget.x, state.tailTarget.z);
+      ctx.fillStyle = '#c44dff';
+      ctx.beginPath();
+      ctx.arc(tx, tz, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Roadblock: orange squares where the VCPD is barricading.
+    if (state.roadblock) {
+      ctx.fillStyle = '#ff7a1a';
+      for (const unit of state.roadblock.cars) {
+        const [rx, rz] = worldToMap(unit.x, unit.z);
+        ctx.fillRect(rx - 3, rz - 3, 6, 6);
+      }
+    }
+
+    // Garage: green square on the lot east of the grid.
+    if (state.garage) {
+      const [gx, gz] = worldToMap(state.garage.x, state.garage.z);
+      ctx.fillStyle = '#7dff6a';
+      ctx.fillRect(gx - 4, gz - 4, 8, 8);
+      ctx.fillStyle = '#111111';
+      ctx.font = 'bold 7px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('G', gx, gz + 0.5);
     }
 
     // Traffic + street cars as small dots.

@@ -4,7 +4,7 @@
 
 export const GAME_TITLE = 'VICE POINT';
 export const SAVE_KEY = 'vicepoint-save-v1';
-export const GAME_VERSION = '1.0.0-r5s2';
+export const GAME_VERSION = '1.0.0-r5s4';
 
 // --- City layout ------------------------------------------------------------
 export const CITY = {
@@ -77,17 +77,76 @@ export const WANTED = {
 };
 
 // --- Missions ---------------------------------------------------------------
-// The Mara Voss chain: three linked jobs, paid in order. Balances check out
-// as $250 -> $550 -> $950 -> $1,550. Types: 'reach' (arrive at the marker),
-// 'escape' (lose the cops; marker is null on purpose — the old game-breaking
-// bug was an escape objective with no target throwing every frame, so every
-// consumer of a mission must guard `mission.marker` before using it),
-// 'getaway' (arrive at the marker in one specific car).
+// The Mara Voss chain: eight linked jobs, paid in order. Balances check out
+// as $250 -> $550 -> $950 -> $1,550 -> $2,350 -> $3,550 -> $4,950 -> $6,550
+// -> $8,550. Types: 'reach' (arrive at the marker), 'escape' (lose the cops;
+// marker is null on purpose — the old game-breaking bug was an escape
+// objective with no target throwing every frame, so every consumer of a
+// mission must guard `mission.marker` before using it), 'getaway' (arrive at
+// the marker in one specific car), 'timed' (reach the marker before the
+// clock runs out — too slow and Mara hands you a fresh clock, not a fail
+// screen), 'tail' (stay on the mark's bumper: get within range of the moving
+// target car), 'survey' (snap all three photo spots in order) and 'heist'
+// (two phases: reach the bank, then lose the heat it brings). `startWanted`
+// is the heat a job opens with; `roadblocks` lets the VCPD barricade the
+// roads during it; `minRespect` gates a job behind the respect score.
 export const MISSIONS = [
   { id: 'm1-pickup', title: 'The Pickup', giver: 'Mara Voss', type: 'reach', objective: "Deliver Mara's package to Hotel VICE", marker: { x: -42, z: -42 }, reward: 300 },
-  { id: 'm2-heat', title: 'Heat', giver: 'Mara Voss', type: 'escape', objective: 'Lose the cops — get your wanted level to zero', marker: null, reward: 400 },
+  { id: 'm2-heat', title: 'Heat', giver: 'Mara Voss', type: 'escape', objective: 'Lose the cops — get your wanted level to zero', marker: null, reward: 400, startWanted: 2 },
   { id: 'm3-getaway', title: 'The Getaway Car', giver: 'Mara Voss', type: 'getaway', objective: 'Steal the Neon Coupe and bring it to Pier 9', marker: { x: 214, z: 96 }, reward: 600, carId: 'neon' },
+  { id: 'm4-drop', title: 'The Drop', giver: 'Mara Voss', type: 'timed', objective: 'Drop the package at the north depot — beat the clock', marker: { x: 84, z: -84 }, reward: 800, timeLimit: 75 },
+  { id: 'm5-tail', title: 'Tail the Mark', giver: 'Mara Voss', type: 'tail', objective: 'Tail the orange mark — get on his bumper', marker: null, reward: 1200 },
+  { id: 'm6-survey', title: 'The Survey', giver: 'Mara Voss', type: 'survey', objective: 'Snap all three photo spots for Mara', marker: { x: -84, z: 84 }, markers: [{ x: -84, z: 84 }, { x: 0, z: -84 }, { x: 126, z: 42 }], reward: 1400, minRespect: 20 },
+  { id: 'm7-roadblock', title: 'Roadblock Run', giver: 'Mara Voss', type: 'escape', objective: 'Lose the cops — they are barricading the roads', marker: null, reward: 1600, startWanted: 3, roadblocks: true },
+  { id: 'm8-heist', title: 'The Big Heist', giver: 'Mara Voss', type: 'heist', objective: 'Hit the Vice Bank, then lose the heat', marker: { x: -126, z: 126 }, reward: 2000, startWanted: 3, roadblocks: true, minRespect: 30 },
 ];
+
+// --- Weapons ----------------------------------------------------------------
+// Fists are free; the pistol and SMG are hitscan (one ray per shot, nearest
+// target inside a narrow cone wins). Ammo only comes back by finishing jobs.
+export const WEAPONS = {
+  fists: { id: 'fists', name: 'FISTS', range: 0, arcCos: 0, cooldown: 0, startAmmo: Infinity },
+  pistol: { id: 'pistol', name: 'PISTOL', range: 40, arcCos: 0.94, cooldown: 0.28, startAmmo: 24, refill: 12 },
+  smg: { id: 'smg', name: 'SMG', range: 36, arcCos: 0.92, cooldown: 0.09, startAmmo: 60, refill: 30 },
+};
+export const WEAPON_ORDER = ['fists', 'pistol', 'smg'];
+
+// --- Helicopter -------------------------------------------------------------
+export const HELI = {
+  health: 5, // hits to bring Air One down
+  downReward: 500,
+  respawnSeconds: 25, // back in the air this long after a shoot-down (wanted >= 4 only)
+  warningEvery: 2.2, // seconds between warning shots at wanted >= 4
+  shootRange: 55, // how far a bullet can reach the heli
+};
+
+// --- Garage -----------------------------------------------------------------
+// One lot east of the grid, on the open asphalt by the beach: store a car,
+// buy a fresh one, or lay low — pulling in sheds a star (cooldown below).
+export const GARAGE = {
+  x: 168,
+  z: 0,
+  radius: 18, // the pad in front of the door sits 15 m out — it must be inside
+  buyPrice: 800,
+  discountRespect: 50, // respect at/above this buys at the discounted price
+  discount: 0.25,
+  decayCooldown: 30, // seconds between garage heat sheds
+};
+
+// --- Respect ----------------------------------------------------------------
+// 0..100, earned by working for Mara and by loud moves (heli down, smashing
+// a roadblock). Gates the later jobs and discounts the garage.
+export const RESPECT = {
+  perMission: 5,
+  heliDown: 2,
+  roadblockSmash: 1,
+  max: 100,
+};
+
+// --- Radio ------------------------------------------------------------------
+export const RADIO = {
+  stations: ['VICE FM', 'NEON 98', 'PIRATE 107'],
+};
 
 export const START = {
   money: 250,
@@ -101,4 +160,5 @@ export const NEON_SIGNS = [
   { text: 'TACOS', color: '#ffb400', x: 42, z: 42, y: 12, size: 4 },
   { text: 'HOTEL', color: '#37e0ff', x: -42, z: -42, y: 18, size: 5 },
   { text: 'PIER 9', color: '#7dff6a', x: 214, z: 96, y: 10, size: 4 },
+  { text: 'GARAGE', color: '#ff9f1c', x: 168, z: 0, y: 9, size: 4 },
 ];

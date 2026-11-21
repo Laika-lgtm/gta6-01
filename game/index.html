@@ -22,6 +22,9 @@
   #hud-speed { position: absolute; bottom: 92px; right: 22px; font-size: 34px; font-weight: 800; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
   #hud-car { position: absolute; bottom: 64px; right: 22px; font-size: 14px; color: #e8e8e8; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
   #hud-health-wrap { position: absolute; bottom: 22px; right: 22px; width: 190px; }
+  #hud-weapon { position: absolute; bottom: 128px; right: 22px; font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #ffd23f; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+  #hud-respect { position: absolute; top: 92px; right: 22px; font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #7dff6a; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+  #hud-radio { position: absolute; bottom: 150px; right: 22px; font-size: 13px; color: #37e0ff; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
   #hud-health-label { font-size: 12px; letter-spacing: 1px; color: #e8e8e8; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
   #hud-health-bar-outer { height: 10px; background: rgba(0,0,0,.55); border-radius: 5px; overflow: hidden; margin-top: 3px; }
   #hud-health-bar { height: 100%; width: 100%; background: #39d353; }
@@ -62,8 +65,11 @@
   <div id="hud-mission"></div>
   <div id="hud-money">$250</div>
   <div id="hud-stars">☆☆☆☆☆</div>
+  <div id="hud-respect">RESPECT 0</div>
   <div id="hud-speed">— mph</div>
   <div id="hud-car">On foot</div>
+  <div id="hud-weapon">FISTS</div>
+  <div id="hud-radio"></div>
   <div id="hud-health-wrap">
     <div id="hud-health-label">HEALTH <span id="hud-health">100</span></div>
     <div id="hud-health-bar-outer"><div id="hud-health-bar"></div></div>
@@ -71,7 +77,7 @@
   <div id="hud-toast"></div>
   <div id="hud-arrow" class="hidden"><span id="hud-arrow-char">▲</span><div id="hud-arrow-dist"></div></div>
   <canvas id="minimap" width="168" height="168"></canvas>
-  <div id="controls-hint">WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter / exit car<br>F punch &nbsp;·&nbsp; Mouse drag look &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; Esc pause &nbsp;·&nbsp; M map hint</div>
+  <div id="controls-hint">WASD move &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter / exit car<br>F punch / shoot &nbsp;·&nbsp; Q weapon &nbsp;·&nbsp; R radio &nbsp;·&nbsp; G garage &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; Esc pause &nbsp;·&nbsp; M map hint</div>
 </div>
 
 <div id="pause-screen" class="hidden">
@@ -85,7 +91,7 @@
   <div id="start-press">PRESS ENTER TO START</div>
   <div id="start-controls">
     WASD — walk &nbsp;·&nbsp; SHIFT — run &nbsp;·&nbsp; E — steal / exit car<br>
-    F — punch &nbsp;·&nbsp; Mouse — look around &nbsp;·&nbsp; SPACE — brake &nbsp;·&nbsp; ESC — pause &nbsp;·&nbsp; M — mission hint
+    F — punch / shoot &nbsp;·&nbsp; Q — weapon &nbsp;·&nbsp; R — radio &nbsp;·&nbsp; G — garage &nbsp;·&nbsp; SPACE — brake &nbsp;·&nbsp; ESC — pause &nbsp;·&nbsp; M — mission hint
   </div>
   <div id="start-credit">An original open-world game. No Rockstar content. Progress saves automatically.</div>
 </div>

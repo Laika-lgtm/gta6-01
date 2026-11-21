@@ -143,5 +143,82 @@ export function createAudio() {
     blip(90 + Math.random() * 30, 0.05, 'sine', 0.07);
   }
 
-  return { unlock, updateEngine, uiClick, missionChime, wantedSting, footstep, updateSiren, punchThud, bustedSting, get sirenActive() { return sirenOn; } };
+  // --- Radio: three procedural stations, in-car only ----------------------
+  // A tiny step sequencer: each station is an 8-step bass line plus a sparse
+  // lead over it, all sine/triangle so it sits under the engine instead of
+  // fighting it. No audio files, no samples — every note is an oscillator.
+  // PIRATE adds a hat tick on the off-beats. The radio only plays while Ray
+  // is in a car; on foot it is silent.
+  const STATIONS = [
+    {
+      name: 'VICE FM', bpm: 100, wave: 'sawtooth',
+      bass: [55, 55, 65.41, 49, 55, 55, 82.41, 65.41],
+      lead: [220, -1, 261.63, -1, 329.63, -1, 392, -1],
+    },
+    {
+      name: 'NEON 98', bpm: 76, wave: 'sine',
+      bass: [65.41, 65.41, 55, 55, 49, 49, 55, 55],
+      lead: [261.63, -1, -1, 329.63, -1, 392, -1, 523.25],
+    },
+    {
+      name: 'PIRATE 107', bpm: 128, wave: 'square',
+      bass: [55, 55, 55, 82.41, 55, 55, 65.41, 82.41],
+      lead: [440, 523.25, -1, 659.25, 587.33, -1, 523.25, 659.25],
+      hats: true,
+    },
+  ];
+  let radioStation = 0;
+  let radioStep = 0;
+  let radioStepTimer = 0;
+
+  function stationName() {
+    return STATIONS[radioStation].name;
+  }
+
+  function nextStation() {
+    radioStation = (radioStation + 1) % STATIONS.length;
+    radioStep = 0;
+    radioStepTimer = 0;
+    return stationName();
+  }
+
+  // Call every frame; `audible` is true only while Ray is driving. The
+  // sequencer advances in 8th notes at the station's tempo.
+  function updateRadio(dt, audible) {
+    if (!context || !audible) {
+      radioStepTimer = 0;
+      return;
+    }
+    const station = STATIONS[radioStation];
+    const stepDur = 60 / station.bpm / 2;
+    radioStepTimer += dt;
+    while (radioStepTimer >= stepDur) {
+      radioStepTimer -= stepDur;
+      const bass = station.bass[radioStep];
+      blip(bass, stepDur * 0.9, 'triangle', 0.10);
+      const lead = station.lead[radioStep];
+      if (lead > 0) blip(lead, stepDur * 0.7, station.wave, 0.045);
+      if (station.hats && radioStep % 2 === 1) blip(6000, 0.02, 'square', 0.02);
+      radioStep = (radioStep + 1) % 8;
+    }
+  }
+
+  // Gunshot crack: a sharp square snap over a low thump.
+  function gunshot() {
+    blip(1500, 0.05, 'square', 0.20);
+    blip(85, 0.12, 'sine', 0.32);
+  }
+
+  // Distant crack for a heli warning shot.
+  function heliWarning() {
+    blip(900, 0.08, 'square', 0.09);
+  }
+
+  return {
+    unlock, updateEngine, uiClick, missionChime, wantedSting, footstep,
+    updateSiren, punchThud, bustedSting, updateRadio, nextStation, stationName,
+    gunshot, heliWarning,
+    get sirenActive() { return sirenOn; },
+    get radioStation() { return radioStation; },
+  };
 }
