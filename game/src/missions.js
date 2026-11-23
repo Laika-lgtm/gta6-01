@@ -293,6 +293,13 @@ export class MissionChain {
       this.phase = 'escape';
       this.failedEscape = true;
       this.say('m2fail');
+      // The bust wipes the heat to zero — and job 2 completes the moment
+      // the heat IS zero. Without fresh heat the failed escape would pay
+      // out on the very next frame ($400 for getting caught). Re-heat so
+      // the escape leg restarts and has to be run again. The other legs
+      // need no such guard: their restarts are position targets (pickup /
+      // go / chase start), not a heat reading the bust itself zeroes.
+      if (this.onHeat) this.onHeat(2);
     } else if (this.stage === 4) {
       this.stage = 4;
       this.phase = 'pickup';

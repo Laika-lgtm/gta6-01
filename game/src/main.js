@@ -1,14 +1,17 @@
-// Vice Point — game bootstrap and main loop, stage 4. Wires the procedural
-// city, Ray on foot, the six-car fleet, street traffic, sidewalk crowds,
-// the wanted system with its PD Interceptors, Mara Voss's eight-job
-// three-act chain, close combat, the HUD with its live round minimap and the
-// procedural sound bank — plus the stage-4 systems: the three-person crew
-// with real gameplay perks, district standing and respect, twelve hidden
-// caches, the Docks export dock, three street races, the pistol/SMG weapon
-// wheel, two procedural radio stations and the Old Town garage. The frame
-// is split in two: updateGame() does the simulation, endFrame() always
-// renders — update runs inside try/finally so a bad frame can never swallow
-// the render.
+// Vice Point — game bootstrap and main loop, round 8 stage 3 final.
+// Wires the procedural city, Ray on foot, the six-car fleet, street
+// traffic, sidewalk crowds, the wanted system with its PD Interceptors,
+// the Air One helicopter and the stage-3 roadblock, Mara Voss's eight-job
+// three-act chain, close combat, the HUD with its live round minimap and
+// the procedural sound bank — plus the stage-4 systems: the three-person
+// crew with real gameplay perks, district standing and respect, twelve
+// hidden caches, the Docks export dock, three street races, the pistol/SMG
+// weapon wheel, two procedural radio stations and the Old Town garage. The
+// frame is split in two: updateGame() does the simulation, endFrame()
+// always renders — update runs inside try/finally so a bad frame can never
+// swallow the render. Stage 3 adds deterministic screenshot staging
+// (?shot=chase|mission|drive|street, seed 8) via shots.js: each mode stages
+// a live scene and locks the camera for it.
 import * as THREE from 'three';
 import { CITY_HALF, PLAYER_START, START_CASH, SAVE_KEY, CARS } from './config.js';
 import { buildCity } from './city.js';
@@ -30,6 +33,7 @@ import { Races } from './races.js';
 import { Arsenal } from './weapons.js';
 import { Radio } from './radio.js';
 import { Garage, GARAGE_SPOT, REPAINT_COST, REPAIR_COST, PAINTS } from './garage.js';
+import { applyShot, isShotName, SHOT_SEED } from './shots.js';
 
 const errBox = document.getElementById('err');
 window.addEventListener('error', (e) => { errBox.textContent = 'ERR: ' + e.message; });
@@ -76,11 +80,58 @@ let gameTime = 0;
 let saveTimer = 0;
 let lastCrashHeat = -10;
 let bustedLock = false;
+let shotName = null;    // ?shot= mode, or null for normal play
+let shotCamLock = false; // staging holds the camera angle fixed
+let snapCamera = false;  // next placeCamera() jumps instead of lerping
 const keys = new Set();
 // Car integrity 0..100 per car id. Crashes chip it; under 30 the car loses
 // its top fifth of speed. Bima halves every hit and patches it for free.
 const carHp = new Map();
 for (const car of fleet.list) carHp.set(car.def.id, 100);
+
+// --- screenshot staging (?shot=) -------------------------------------------
+// Deterministic staging lives in shots.js; main.js only hands it the live
+// objects and the few setters that touch module-private state.
+function hideStart() {
+  document.getElementById('start').style.display = 'none';
+  started = true;
+}
+function setShot(name) { shotName = name; }
+function setCamera(yaw, pitch, dist, lock) {
+  camYaw = yaw;
+  camPitch = pitch;
+  camDist = dist;
+  shotCamLock = !!lock;
+  snapCamera = true;
+}
+function putInCar(id, x, z, heading, speed) {
+  const car = fleet.list.find((c) => c.def.id === id);
+  if (!car) return false;
+  if (driving && driving !== car) driving.occupied = false;
+  car.pos.set(x, 0, z);
+  car.heading = heading;
+  car.speed = speed || 0;
+  car.mesh.position.copy(car.pos);
+  car.mesh.rotation.y = heading;
+  car.occupied = true;
+  driving = car;
+  walker.group.visible = false;
+  return true;
+}
+function putOnFoot(x, z) {
+  if (driving) { driving.occupied = false; driving = null; }
+  walker.group.visible = true;
+  walker.pos.set(x, 0, z);
+  walker.group.position.copy(walker.pos);
+  sounds.setEngine(false, 0);
+}
+function buildShotCtx() {
+  return {
+    walker, fleet, traffic, peds, wanted, police, missions, crew, hud,
+    hideStart, setShot, setCamera, putInCar, putOnFoot,
+    setCash(n) { cash = n; hud.setCash(n); },
+  };
+}
 
 // --- car damage ------------------------------------------------------------
 function damageCar(base) {
@@ -189,6 +240,18 @@ hud.setWeapon(arsenal.label());
 hud.setRadio(radio.current.name);
 hud.setStanding(standing.summary());
 hud.setHint('WASD walk · Shift run · E enter car · F punch · find Mara at Pier 9');
+
+// Screenshot staging runs after the save load so it always wins: a staged
+// frame is a fixed scene, never a leftover save. The seed must match
+// SHOT_SEED exactly, or the param is ignored and the game opens normally.
+{
+  const params = new URLSearchParams(location.search);
+  const shotParam = params.get('shot');
+  const seedParam = Number(params.get('seed'));
+  if (shotParam && isShotName(shotParam) && (Number.isNaN(seedParam) || seedParam === SHOT_SEED)) {
+    applyShot(shotParam, buildShotCtx());
+  }
+}
 
 // --- missions wiring -------------------------------------------------------
 missions.onReward = (amount) => { cash += amount; hud.setCash(cash); saveGame(); };
@@ -558,7 +621,12 @@ function placeCamera(target) {
     dist *= 0.72;
     if (dist < 1.8) break;
   }
-  camera.position.lerp(want, 0.35);
+  if (snapCamera) {
+    camera.position.copy(want);
+    snapCamera = false;
+  } else {
+    camera.position.lerp(want, 0.35);
+  }
   camera.lookAt(target.x, target.y + 1.6, target.z);
 }
 
@@ -569,6 +637,11 @@ function updateGame(dt) {
   crew.update(dt);
   radio.update(dt);
   arsenal.update(dt);
+  // Screenshot staging drives itself: hold W so the staged CAR keeps
+  // moving toward the lens without any input device. On-foot staging
+  // (street) does NOT hold W — Ray would walk away from his staged crowd
+  // and end up in an empty plaza before the shutter fires.
+  if (shotName === 'chase' || shotName === 'drive') keys.add('KeyW');
   let speedKmh = 0;
   const focus = driving ? driving.pos : walker.pos;
 
@@ -579,7 +652,8 @@ function updateGame(dt) {
     if (hp < 30) {
       driving.speed = Math.max(-driving.def.top * 0.45, Math.min(driving.def.top * 0.8, driving.speed));
     }
-    camYaw += (driving.heading + Math.PI - camYaw) * 0.02;
+    // The driving camera eases behind the car — unless staging locked it.
+    if (!shotCamLock) camYaw += (driving.heading + Math.PI - camYaw) * 0.02;
   } else {
     walker.update(dt, keys, camYaw, colliders, sounds);
     if (combat.swing > 0) walker.armR.rotation.x = combat.armAngle();
@@ -619,7 +693,8 @@ function updateGame(dt) {
   } else {
     police.onRam = (closing) => { sounds.crash(closing / 10); damageCar(6); };
     const playerSpeed = driving ? Math.abs(driving.speed) : walker.speed;
-    police.update(dt, wanted.level, focus, driving, !driving, playerSpeed, colliders, (kind) => doBusted(kind));
+    const playerHeading = driving ? driving.heading : walker.yaw;
+    police.update(dt, wanted.level, focus, driving, !driving, playerSpeed, colliders, (kind) => doBusted(kind), playerHeading);
     if (police.active > 0) sounds.sirenStart();
     else sounds.sirenStop();
   }
@@ -678,7 +753,7 @@ function endFrame() {
 let last = performance.now();
 function tick(now) {
   requestAnimationFrame(tick);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
   last = now;
   if (!started) {
     // Idle attract mode behind the start screen: slow orbit over the Strip.
@@ -703,6 +778,10 @@ window.__vp = {
   get cash() { return cash; },
   get paused() { return paused; },
   get gameTime() { return gameTime; },
+  get shot() { return shotName; },
+  get shotSeed() { return SHOT_SEED; },
+  get heli() { return police.heliUp; },
+  get roadblock() { return police.roadblockUp; },
   get carHp() { return Object.fromEntries(carHp); },
   saveGame,
   state() {
@@ -711,7 +790,8 @@ window.__vp = {
       x: +(driving ? driving.pos.x : walker.pos.x).toFixed(1),
       z: +(driving ? driving.pos.z : walker.pos.z).toFixed(1),
       driving: driving ? driving.def.id : null,
-      police: police.active, traffic: traffic.list.length, peds: peds.list.length,
+      police: police.active, heli: police.heliUp, roadblock: police.roadblockUp,
+      traffic: traffic.list.length, peds: peds.list.length,
       maraVisible: missions.mara.visible,
       respect: respect.score, respectTitle: respect.title,
       caches: caches.count, cachesTotal: caches.total,
@@ -726,6 +806,9 @@ window.__vp = {
       carHp: driving ? carHp.get(driving.def.id) : null,
       jamLeft: +crew.jamLeft.toFixed(1),
       wantedCalm: +wanted.calmFor.toFixed(1), wantedCool: +wanted.coolTimer.toFixed(1),
+      shot: shotName, gameTime: +gameTime.toFixed(2),
+      camYaw: +camYaw.toFixed(2), camPitch: +camPitch.toFixed(2), camDist: +camDist.toFixed(2),
+      objective: missions.targetLabel,
     };
   },
   debug: {
@@ -757,9 +840,16 @@ window.__vp = {
     collectCache(i) { return caches.collectAt(i); },
     setCarHp(n) { if (driving) carHp.set(driving.def.id, n); return driving ? carHp.get(driving.def.id) : null; },
     damageCar(n) { damageCar(n); return driving ? carHp.get(driving.def.id) : null; },
+    setCamera(yaw, pitch, dist, lock) { setCamera(yaw, pitch, dist, lock); },
+    putInCar(id, x, z, heading, speed) { return putInCar(id, x, z, heading, speed); },
+    putOnFoot(x, z) { putOnFoot(x, z); },
+    spawnRoadblock(x, z, heading) { police.spawnRoadblockAt(x, z, heading); return police.roadblockUp; },
+    clearRoadblock() { police.removeRoadblock(); return police.roadblockUp; },
+    stageShot(name) { return applyShot(name, buildShotCtx()); },
+    startGame() { hideStart(); },
   },
 };
 requestAnimationFrame(tick);
-console.log('[vice-point] r8 stage4 ready: buildings=' + buildingCount + ' palms=' + palmCount
+console.log('[vice-point] r8 stage3-final ready: buildings=' + buildingCount + ' palms=' + palmCount
   + ' cars=' + fleet.list.length + ' traffic=' + traffic.list.length + ' peds=' + peds.list.length
-  + ' caches=' + caches.total + ' races=3 crew=3');
+  + ' caches=' + caches.total + ' races=3 crew=3 shots=4 heli=air-one roadblock=3stars');
