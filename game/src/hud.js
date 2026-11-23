@@ -1,7 +1,10 @@
-// Vice Point — HUD and live round minimap. The HUD is DOM (cash, district,
-// objective line, speed, hints, wanted stars, dialog); the minimap is a 2D
-// canvas redrawn every frame showing district blocks, the player arrow,
-// parked cars, traffic, police and peds, plus the current objective marker.
+// Vice Point — HUD and live round minimap, stage 4. The HUD is DOM (cash,
+// district, objective line, speed, hints, wanted stars, dialog) plus the
+// stage-4 readouts: crew, respect, cache count, weapon, radio station and
+// race timer, a district-standing panel (T), the weapon wheel (Q) and the
+// garage panel (G). The minimap is a 2D canvas redrawn every frame showing
+// district blocks, the player arrow, parked cars, traffic, police, peds,
+// the objective marker and — when one is close — the nearest cache.
 import { DISTRICTS, districtAt } from './config.js';
 
 export class Hud {
@@ -19,10 +22,29 @@ export class Hud {
     this.dialogTextEl = document.getElementById('dialog-text');
     this.dialogDone = null;
     this.dialogShown = false;
+    this.crewEl = document.getElementById('hud-crew');
+    this.respectEl = document.getElementById('hud-respect');
+    this.cachesEl = document.getElementById('hud-caches');
+    this.weaponEl = document.getElementById('hud-weapon');
+    this.radioEl = document.getElementById('hud-radio');
+    this.raceEl = document.getElementById('hud-race');
+    this.standingEl = document.getElementById('hud-standing');
+    this.wheelEl = document.getElementById('wheel');
+    this.garageEl = document.getElementById('garage');
+    this.garageInfoEl = document.getElementById('garage-info');
+    this.standingShown = false;
   }
+
   setCash(n) { this.cashEl.textContent = '$' + n; }
   setObjective(text) { this.objEl.textContent = text; }
   setHint(text) { this.hintEl.textContent = text; }
+  setCrew(text) { if (this.crewEl) this.crewEl.textContent = text; }
+  setRespect(text) { if (this.respectEl) this.respectEl.textContent = text; }
+  setCaches(n, total) { if (this.cachesEl) this.cachesEl.textContent = `Caches ${n}/${total}`; }
+  setWeapon(text) { if (this.weaponEl) this.weaponEl.textContent = text; }
+  setRadio(text) { if (this.radioEl) this.radioEl.textContent = '♪ ' + text; }
+  setRace(text) { if (this.raceEl) this.raceEl.textContent = text; }
+
   setWanted(n) {
     if (!this.wantedEl) return;
     let s = '';
@@ -30,6 +52,7 @@ export class Hud {
     this.wantedEl.textContent = s;
     this.wantedEl.style.color = n === 0 ? 'rgba(255,255,255,0.55)' : '#ffd23b';
   }
+
   showDialog(name, text, onDone) {
     if (!this.dialogEl) { if (onDone) onDone(); return; }
     this.dialogNameEl.textContent = name;
@@ -47,6 +70,39 @@ export class Hud {
     if (cb) cb();
     return true;
   }
+
+  // Standing panel: a line per district with its level as stars.
+  setStanding(summary) {
+    if (!this.standingEl) return;
+    this.standingEl.innerHTML = '<b>DISTRICT STANDING</b><br>' + summary.map((s) => {
+      let stars = '';
+      for (let i = 0; i < 5; i++) stars += i < s.level ? '★' : '☆';
+      return `${s.name}: ${stars}`;
+    }).join('<br>');
+  }
+  toggleStanding() {
+    if (!this.standingEl) return false;
+    this.standingShown = !this.standingShown;
+    this.standingEl.style.display = this.standingShown ? 'block' : 'none';
+    return this.standingShown;
+  }
+
+  // Weapon wheel: three slots, the current one highlighted.
+  showWheel(open, current) {
+    if (!this.wheelEl) return;
+    if (!open) { this.wheelEl.style.display = 'none'; return; }
+    const slot = (id, label) => `<div class="wheel-slot${current === id ? ' on' : ''}">${label}<br><span>${id === 'pistol' ? '1' : '2'}</span></div>`;
+    this.wheelEl.innerHTML = `<div class="wheel-title">WEAPONS</div>${slot('pistol', 'Pistol')}${slot('smg', 'SMG')}<div class="wheel-hint">1 / 2 to pick · Q to close · X to fire</div>`;
+    this.wheelEl.style.display = 'block';
+  }
+
+  // Garage panel: info line plus buttons wired by main.
+  showGarage(open, info) {
+    if (!this.garageEl) return;
+    if (info !== undefined && this.garageInfoEl) this.garageInfoEl.textContent = info;
+    this.garageEl.style.display = open ? 'block' : 'none';
+  }
+
   drawMinimap(playerPos, playerYaw, cars, objective, extras) {
     const g = this.mctx;
     const S = this.map.width;
@@ -80,6 +136,16 @@ export class Hud {
       g.strokeStyle = '#fff'; g.lineWidth = 2;
       g.beginPath(); g.arc(ox, oy, 9, 0, Math.PI * 2); g.stroke();
     }
+    // A nearby cache shows as a gold diamond on the map.
+    if (extras && extras.cache) {
+      const [kx, ky] = toMap(extras.cache.x, extras.cache.z);
+      g.fillStyle = '#ffd23b';
+      g.save();
+      g.translate(kx, ky);
+      g.rotate(Math.PI / 4);
+      g.fillRect(-4, -4, 8, 8);
+      g.restore();
+    }
     for (const car of cars) {
       const [cx, cy] = toMap(car.pos.x, car.pos.z);
       g.fillStyle = '#' + car.def.color.toString(16).padStart(6, '0');
@@ -107,6 +173,11 @@ export class Hud {
           g.fillRect(cx - 1, cy - 1, 2, 2);
         }
       }
+      if (extras.race) {
+        const [rx, ry] = toMap(extras.race.x, extras.race.z);
+        g.fillStyle = '#2fd4ff';
+        g.beginPath(); g.arc(rx, ry, 5, 0, Math.PI * 2); g.fill();
+      }
     }
     const [px, py] = toMap(playerPos.x, playerPos.z);
     g.save();
@@ -122,6 +193,7 @@ export class Hud {
     this.distEl.textContent = d.name;
     this.distEl.style.color = '#' + d.accent.toString(16).padStart(6, '0');
   }
+
   setSpeed(kmh, driving) {
     this.speedEl.textContent = driving ? Math.round(kmh * 3.2) + ' km/h' : '';
   }

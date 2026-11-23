@@ -12,6 +12,9 @@
   #hud-top { top: 14px; left: 16px; font-size: 20px; font-weight: bold; }
   #hud-district { font-size: 15px; font-weight: bold; margin-top: 2px; }
   #hud-wanted { font-size: 22px; letter-spacing: 3px; margin-top: 4px; color: rgba(255,255,255,.55); }
+  #hud-sub { top: 128px; left: 16px; font-size: 13px; line-height: 1.7; background: rgba(0,0,0,.4); padding: 8px 12px; border-radius: 10px; }
+  #hud-sub span { display: block; }
+  #hud-race { color: #2fd4ff; font-weight: bold; }
   #dialog { display: none; position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 6; width: min(560px, 90vw); background: rgba(10,10,24,.82); border: 1px solid rgba(255,210,59,.6); border-radius: 12px; padding: 12px 16px; color: #fff; }
   #dialog-name { color: #ff2fb3; font-weight: bold; font-size: 14px; margin-bottom: 4px; }
   #dialog-text { font-size: 15px; line-height: 1.5; }
@@ -19,12 +22,24 @@
   #pause { display: none; position: fixed; inset: 0; z-index: 9; align-items: center; justify-content: center; background: rgba(8,8,20,.72); color: #fff; text-align: center; }
   #pause h1 { font-size: 44px; letter-spacing: 8px; color: #ffe14d; margin: 0 0 8px; }
   #pause p { font-size: 15px; color: #dfe8f2; }
-  #hud-objective { top: 14px; left: 50%; transform: translateX(-50%); font-size: 15px; background: rgba(0,0,0,.45); padding: 7px 14px; border-radius: 20px; }
+  #hud-objective { top: 14px; left: 50%; transform: translateX(-50%); font-size: 15px; background: rgba(0,0,0,.45); padding: 7px 14px; border-radius: 20px; max-width: 44vw; text-align: center; }
   #hud-speed { bottom: 18px; right: 20px; font-size: 26px; font-weight: bold; }
-  #hud-hint { bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 13px; background: rgba(0,0,0,.45); padding: 6px 12px; border-radius: 16px; }
+  #hud-hint { bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 13px; background: rgba(0,0,0,.45); padding: 6px 12px; border-radius: 16px; max-width: 70vw; text-align: center; }
+  #hud-standing { display: none; position: fixed; left: 16px; top: 250px; z-index: 5; background: rgba(8,8,20,.85); border: 1px solid rgba(255,210,59,.5); border-radius: 10px; padding: 10px 14px; color: #fff; font-size: 13px; line-height: 1.8; }
+  #wheel { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 7; background: rgba(10,10,24,.88); border: 1px solid rgba(255,47,179,.6); border-radius: 14px; padding: 16px 20px; color: #fff; text-align: center; }
+  #wheel .wheel-title { font-size: 13px; letter-spacing: 4px; color: #ffe14d; margin-bottom: 10px; }
+  #wheel .wheel-slot { display: inline-block; margin: 0 8px; padding: 12px 18px; border: 2px solid rgba(255,255,255,.25); border-radius: 10px; font-size: 15px; font-weight: bold; }
+  #wheel .wheel-slot.on { border-color: #ff2fb3; background: rgba(255,47,179,.2); }
+  #wheel .wheel-slot span { font-size: 11px; color: #ffe14d; }
+  #wheel .wheel-hint { font-size: 11px; color: #dfe8f2; margin-top: 10px; }
+  #garage { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 7; width: min(480px, 92vw); background: rgba(10,10,24,.92); border: 1px solid rgba(127,227,255,.6); border-radius: 14px; padding: 18px 22px; color: #fff; }
+  #garage h2 { margin: 0 0 6px; font-size: 20px; color: #7fe3ff; letter-spacing: 2px; }
+  #garage-info { font-size: 13px; line-height: 1.7; color: #dfe8f2; margin-bottom: 12px; white-space: pre-line; }
+  #garage button { cursor: pointer; font-size: 14px; font-weight: bold; color: #1a0b2e; background: #ffe14d; border: none; border-radius: 20px; padding: 9px 18px; margin: 3px 4px 3px 0; }
+  #garage button:hover { background: #ff2fb3; color: #fff; }
   #minimap { position: fixed; right: 16px; top: 14px; width: 168px; height: 168px; border-radius: 50%; border: 3px solid rgba(255,255,255,.75); box-shadow: 0 2px 14px rgba(0,0,0,.5); z-index: 5; background: #0e2a3a; }
   #start { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, rgba(20,8,40,.88), rgba(8,40,60,.88)); color: #fff; }
-  #start .card { text-align: center; max-width: 560px; padding: 30px; }
+  #start .card { text-align: center; max-width: 600px; padding: 30px; }
   #start h1 { font-size: 64px; margin: 0; letter-spacing: 4px; color: #ff2fb3; text-shadow: 0 0 26px #ff2fb3, 0 4px 0 #7a2ea6; }
   #start h2 { font-size: 18px; font-weight: normal; color: #ffe14d; margin: 6px 0 18px; }
   #start p { font-size: 14px; line-height: 1.7; color: #dfe8f2; }
@@ -39,21 +54,28 @@
 <body>
 <canvas id="scene"></canvas>
 <div class="hud" id="hud-top"><span id="hud-cash">$250</span><br><span id="hud-district">Neon Strip</span><br><span id="hud-wanted">☆☆☆☆☆</span></div>
+<div class="hud" id="hud-sub"><span id="hud-crew">Crew: none (C to pick)</span><span id="hud-respect">Respect 0/100 — Nobody</span><span id="hud-caches">Caches 0/12</span><span id="hud-weapon">Pistol 12/∞</span><span id="hud-radio">♪ VICE FM — synthwave</span><span id="hud-race"></span></div>
 <div class="hud" id="hud-objective">Meet your contact at Pier 9</div>
 <canvas id="minimap" width="168" height="168"></canvas>
+<div id="hud-standing"></div>
 <div id="dialog"><div id="dialog-name"></div><div id="dialog-text"></div><div class="dlg-hint">Press E to continue</div></div>
+<div id="wheel"></div>
+<div id="garage"><h2>RAY'S GARAGE — OLD TOWN</h2><div id="garage-info"></div><div><button id="g-buy">Buy this car</button><button id="g-paint">Repaint $50</button><button id="g-repair">Repair $30</button><button id="g-close">Close (G)</button></div></div>
 <div id="pause"><div><h1>PAUSED</h1><p>Press Esc or P to keep driving Vice Point.</p></div></div>
 <div class="hud" id="hud-speed"></div>
-<div class="hud" id="hud-hint">WASD walk &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; click to look</div>
+<div class="hud" id="hud-hint">WASD walk &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; F punch &nbsp;·&nbsp; click to look</div>
 <div id="start"><div class="card">
   <h1>VICE POINT</h1>
   <h2>Seven districts. One island. Your name on it.</h2>
   <p>You are <b>Ray Delgado</b>, a driver-for-hire on the island of Vice Point.
   Walk the Neon Strip, steal a car, and meet your contact at <b>Pier 9</b> to
-  start your first job. Cash, mission progress and your position save
-  automatically — every five seconds, and on every payout.</p>
+  start your first job. Eight jobs, three crew to recruit, twelve hidden
+  caches, three street races, an export dock and a garage of your own —
+  the whole chain runs <b>$250 to $8,550</b>. Cash, mission progress and
+  your position save automatically — every five seconds, and on every payout.</p>
   <p><b>WASD</b> move &nbsp;·&nbsp; <b>mouse</b> look &nbsp;·&nbsp; <b>Shift</b> sprint<br>
-  <b>E</b> get in / out of a car &nbsp;·&nbsp; <b>Space</b> handbrake &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>Esc</b> pause<br>
+  <b>E</b> get in / out of a car &nbsp;·&nbsp; <b>Space</b> handbrake &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>X</b> shoot &nbsp;·&nbsp; <b>Q</b> weapon wheel<br>
+  <b>R</b> radio &nbsp;·&nbsp; <b>C</b> crew &nbsp;·&nbsp; <b>K</b> Kiko jam &nbsp;·&nbsp; <b>B</b> repair &nbsp;·&nbsp; <b>G</b> garage &nbsp;·&nbsp; <b>V</b> export &nbsp;·&nbsp; <b>Y</b> race &nbsp;·&nbsp; <b>T</b> standing &nbsp;·&nbsp; <b>Esc</b> pause<br>
   Mara Voss has work for you — find her at <b>Pier 9</b>, down by the beach.</p>
   <button id="startBtn">START ENGINE</button>
   <p id="saveNote"></p>

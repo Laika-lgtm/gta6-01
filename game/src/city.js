@@ -1,45 +1,17 @@
-// Vice Point — procedural island city builder. Lays out a 6x6 block grid on
-// the island, raises ~100 low-poly buildings tinted per district, plants 48
-// palms along the beachfront and avenues, hangs glowing neon signs (VICE,
-// TACOS, HOTEL, PIER 9), and builds the pier, the runway and the sea. Returns
-// the axis-aligned colliders the walker and cars use, plus a district lookup.
+// Vice Point — procedural island city builder, stage 4. Lays out a 6x6
+// block grid on the island, raises ~100 low-poly buildings tinted per
+// district, plants 48 palms along the beachfront and avenues, hangs glowing
+// neon signs (VICE, TACOS, HOTEL, PIER 9), and builds the pier, the runway
+// and the sea. Every surface is painted by the stage-4 texture module —
+// canvas facades with lit windows, speckled asphalt, tiled sidewalks, rust
+// containers — so no image file is ever fetched. Returns the axis-aligned
+// colliders the walker and cars use, plus a district lookup.
 import * as THREE from 'three';
 import { CITY_SEED, CITY_HALF, DISTRICTS, districtAt, makeRng } from './config.js';
-
-function neonTexture(word, fg, bg) {
-  const c = document.createElement('canvas');
-  c.width = 512; c.height = 160;
-  const g = c.getContext('2d');
-  g.fillStyle = bg; g.fillRect(0, 0, 512, 160);
-  g.font = 'bold 92px Arial, sans-serif';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.shadowColor = fg; g.shadowBlur = 34;
-  g.fillStyle = fg;
-  g.fillText(word, 256, 84);
-  g.shadowBlur = 8;
-  g.fillStyle = '#ffffff';
-  g.fillText(word, 256, 84);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-function windowTexture(base, lit) {
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 256;
-  const g = c.getContext('2d');
-  g.fillStyle = base; g.fillRect(0, 0, 128, 256);
-  const rng = makeRng(base.length * 977 + 11);
-  for (let y = 12; y < 244; y += 22) {
-    for (let x = 10; x < 118; x += 26) {
-      g.fillStyle = rng() < 0.45 ? lit : '#20242e';
-      g.fillRect(x, y, 16, 13);
-    }
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
+import {
+  makeFacadeTexture, makeRoadTexture, makeSidewalkTexture,
+  makeNeonTexture, makeContainerTexture,
+} from './textures.js';
 
 export function buildCity(scene) {
   const rng = makeRng(CITY_SEED);
@@ -84,15 +56,41 @@ export function buildCity(scene) {
   sand.position.set(0, -0.6, CITY_HALF - 10);
   scene.add(sand);
 
-  // Roads: a 6x6 grid of dark strips with pale dashes.
-  const roadMat = new THREE.MeshLambertMaterial({ color: 0x3a3f46 });
+  // Roads: a 6x6 grid of textured asphalt strips with pale dashes, plus
+  // tiled sidewalks running alongside every road.
+  const roadTexH = makeRoadTexture();
+  roadTexH.wrapS = THREE.RepeatWrapping;
+  roadTexH.wrapT = THREE.RepeatWrapping;
+  roadTexH.repeat.set(24, 1);
+  const roadTexV = makeRoadTexture();
+  roadTexV.wrapS = THREE.RepeatWrapping;
+  roadTexV.wrapT = THREE.RepeatWrapping;
+  roadTexV.repeat.set(1, 24);
+  const roadMatH = new THREE.MeshLambertMaterial({ map: roadTexH });
+  const roadMatV = new THREE.MeshLambertMaterial({ map: roadTexV });
+  const walkTexH = makeSidewalkTexture();
+  walkTexH.wrapS = THREE.RepeatWrapping;
+  walkTexH.wrapT = THREE.RepeatWrapping;
+  walkTexH.repeat.set(24, 1);
+  const walkTexV = makeSidewalkTexture();
+  walkTexV.wrapS = THREE.RepeatWrapping;
+  walkTexV.wrapT = THREE.RepeatWrapping;
+  walkTexV.repeat.set(1, 24);
+  const walkMatH = new THREE.MeshLambertMaterial({ map: walkTexH });
+  const walkMatV = new THREE.MeshLambertMaterial({ map: walkTexV });
   const dashMat = new THREE.MeshLambertMaterial({ color: 0xd8d2a0 });
   const gridLines = [-250, -150, -50, 50, 150, 250];
   for (const v of gridLines) {
-    const h = new THREE.Mesh(new THREE.PlaneGeometry(CITY_HALF * 2, 12), roadMat);
+    const h = new THREE.Mesh(new THREE.PlaneGeometry(CITY_HALF * 2, 12), roadMatH);
     h.rotation.x = -Math.PI / 2; h.position.set(0, 0.05, v); scene.add(h);
-    const vv = new THREE.Mesh(new THREE.PlaneGeometry(12, CITY_HALF * 2), roadMat);
+    const vv = new THREE.Mesh(new THREE.PlaneGeometry(12, CITY_HALF * 2), roadMatV);
     vv.rotation.x = -Math.PI / 2; vv.position.set(v, 0.05, 0); scene.add(vv);
+    for (const off of [-9.5, 9.5]) {
+      const s1 = new THREE.Mesh(new THREE.PlaneGeometry(CITY_HALF * 2, 5), walkMatH);
+      s1.rotation.x = -Math.PI / 2; s1.position.set(0, 0.04, v + off); scene.add(s1);
+      const s2 = new THREE.Mesh(new THREE.PlaneGeometry(5, CITY_HALF * 2), walkMatV);
+      s2.rotation.x = -Math.PI / 2; s2.position.set(v + off, 0.04, 0); scene.add(s2);
+    }
     for (let d = -280; d < 290; d += 24) {
       const dash = new THREE.Mesh(new THREE.PlaneGeometry(5, 0.7), dashMat);
       dash.rotation.x = -Math.PI / 2; dash.position.set(d, 0.08, v); scene.add(dash);
@@ -102,13 +100,14 @@ export function buildCity(scene) {
   }
 
   // Buildings: one per block cell, jittered, height by district character.
+  // Two facade variants per district keep the skyline from repeating.
   const facadeCache = new Map();
-  const facadeFor = (dist) => {
-    const key = dist.id;
+  const facadeFor = (dist, variant) => {
+    const key = dist.id + ':' + variant;
     if (!facadeCache.has(key)) {
-      const base = '#' + new THREE.Color(dist.color).getHexString();
-      const tex = windowTexture(base, '#ffd98a');
-      tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+      const tex = makeFacadeTexture(dist, variant);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
       tex.repeat.set(2, 1);
       facadeCache.set(key, tex);
     }
@@ -120,13 +119,14 @@ export function buildCity(scene) {
       const cx = gx * 100 + (rng() - 0.5) * 18;
       const cz = gz * 100 + (rng() - 0.5) * 18;
       const dist = districtAt(cx, cz);
+      const variant = (built + gx + gz) % 2 === 0 ? 0 : 1;
       const tall = dist.id === 'neon' || dist.id === 'hills';
       const h = tall ? 26 + rng() * 46 : 10 + rng() * 22;
       const w = 26 + rng() * 14;
       const d = 26 + rng() * 14;
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshLambertMaterial({ map: facadeFor(dist) }),
+        new THREE.MeshLambertMaterial({ map: facadeFor(dist, variant) }),
       );
       mesh.position.set(cx, h / 2, cz);
       scene.add(mesh);
@@ -140,7 +140,7 @@ export function buildCity(scene) {
         const z2 = cz + (rng() - 0.5) * 30;
         const m2 = new THREE.Mesh(
           new THREE.BoxGeometry(w2, h2, d2),
-          new THREE.MeshLambertMaterial({ map: facadeFor(dist) }),
+          new THREE.MeshLambertMaterial({ map: facadeFor(dist, variant) }),
         );
         m2.position.set(x2, h2 / 2, z2);
         scene.add(m2);
@@ -158,7 +158,7 @@ export function buildCity(scene) {
     const w = 16 + rng() * 12, h = 8 + rng() * 16, d = 16 + rng() * 12;
     const m = new THREE.Mesh(
       new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshLambertMaterial({ map: facadeFor(dist) }),
+      new THREE.MeshLambertMaterial({ map: facadeFor(dist, built % 2) }),
     );
     m.position.set(x, h / 2, z);
     scene.add(m);
@@ -176,7 +176,7 @@ export function buildCity(scene) {
   for (const s of signs) {
     const panel = new THREE.Mesh(
       new THREE.PlaneGeometry(30, 9.4),
-      new THREE.MeshBasicMaterial({ map: neonTexture(s.word, s.fg, s.bg) }),
+      new THREE.MeshBasicMaterial({ map: makeNeonTexture(s.word, s.fg, s.bg) }),
     );
     panel.position.set(s.x, s.y, s.z);
     panel.rotation.y = s.ry;
@@ -217,16 +217,24 @@ export function buildCity(scene) {
   jet.rotation.y = 0.4;
   scene.add(jet);
 
-  // Docks cranes + containers.
+  // Docks cranes + rust-streaked containers.
   for (let i = 0; i < 3; i++) {
     const cx = -260 + i * 60;
     box(4, 42, 4, 0xd86a2a, cx, 21, -260);
     box(30, 4, 4, 0xd86a2a, cx + 12, 40, -260);
     box(6, 6, 3, 0x333a44, cx + 24, 36, -260);
   }
-  const contColors = [0xc23b3b, 0x2f7fc2, 0x3ba65a, 0xd8a02a];
+  const contColors = ['#c23b3b', '#2f7fc2', '#3ba65a', '#d8a02a'];
+  const contTex = new Map();
   for (let i = 0; i < 12; i++) {
-    box(12, 3.4, 3.4, contColors[i % 4], -270 + (i % 4) * 16, 1.7 + Math.floor(i / 4) * 3.6, -200 + Math.floor(i / 4) * 8);
+    const hex = contColors[i % 4];
+    if (!contTex.has(hex)) contTex.set(hex, makeContainerTexture(hex));
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(12, 3.4, 3.4),
+      new THREE.MeshLambertMaterial({ map: contTex.get(hex) }),
+    );
+    m.position.set(-270 + (i % 4) * 16, 1.7 + Math.floor(i / 4) * 3.6, -200 + Math.floor(i / 4) * 8);
+    scene.add(m);
   }
 
   // 48 palms: beachfront row + avenue rows.
