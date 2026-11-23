@@ -1,7 +1,7 @@
 // Vice Point — HUD and live round minimap. The HUD is DOM (cash, district,
-// objective line, speed, hints); the minimap is a 2D canvas redrawn every
-// frame showing district blocks, the player arrow, parked cars and the
-// current objective marker.
+// objective line, speed, hints, wanted stars, dialog); the minimap is a 2D
+// canvas redrawn every frame showing district blocks, the player arrow,
+// parked cars, traffic, police and peds, plus the current objective marker.
 import { DISTRICTS, districtAt } from './config.js';
 
 export class Hud {
@@ -13,11 +13,41 @@ export class Hud {
     this.hintEl = document.getElementById('hud-hint');
     this.map = document.getElementById('minimap');
     this.mctx = this.map.getContext('2d');
+    this.wantedEl = document.getElementById('hud-wanted');
+    this.dialogEl = document.getElementById('dialog');
+    this.dialogNameEl = document.getElementById('dialog-name');
+    this.dialogTextEl = document.getElementById('dialog-text');
+    this.dialogDone = null;
+    this.dialogShown = false;
   }
   setCash(n) { this.cashEl.textContent = '$' + n; }
   setObjective(text) { this.objEl.textContent = text; }
   setHint(text) { this.hintEl.textContent = text; }
-  drawMinimap(playerPos, playerYaw, cars, objective) {
+  setWanted(n) {
+    if (!this.wantedEl) return;
+    let s = '';
+    for (let i = 0; i < 5; i++) s += i < n ? '★' : '☆';
+    this.wantedEl.textContent = s;
+    this.wantedEl.style.color = n === 0 ? 'rgba(255,255,255,0.55)' : '#ffd23b';
+  }
+  showDialog(name, text, onDone) {
+    if (!this.dialogEl) { if (onDone) onDone(); return; }
+    this.dialogNameEl.textContent = name;
+    this.dialogTextEl.textContent = text;
+    this.dialogEl.style.display = 'block';
+    this.dialogDone = onDone || null;
+    this.dialogShown = true;
+  }
+  advanceDialog() {
+    if (!this.dialogShown) return false;
+    this.dialogEl.style.display = 'none';
+    this.dialogShown = false;
+    const cb = this.dialogDone;
+    this.dialogDone = null;
+    if (cb) cb();
+    return true;
+  }
+  drawMinimap(playerPos, playerYaw, cars, objective, extras) {
     const g = this.mctx;
     const S = this.map.width;
     const toMap = (x, z) => [((x + 300) / 600) * S, ((z + 300) / 600) * S];
@@ -54,6 +84,29 @@ export class Hud {
       const [cx, cy] = toMap(car.pos.x, car.pos.z);
       g.fillStyle = '#' + car.def.color.toString(16).padStart(6, '0');
       g.fillRect(cx - 3, cy - 3, 6, 6);
+    }
+    if (extras) {
+      if (extras.traffic) {
+        g.fillStyle = 'rgba(200,200,200,0.85)';
+        for (const car of extras.traffic) {
+          const [cx, cy] = toMap(car.pos.x, car.pos.z);
+          g.fillRect(cx - 2, cy - 2, 4, 4);
+        }
+      }
+      if (extras.police) {
+        g.fillStyle = '#3a86ff';
+        for (const u of extras.police) {
+          const [cx, cy] = toMap(u.pos.x, u.pos.z);
+          g.beginPath(); g.arc(cx, cy, 4, 0, Math.PI * 2); g.fill();
+        }
+      }
+      if (extras.peds) {
+        g.fillStyle = 'rgba(255,255,255,0.6)';
+        for (const p of extras.peds) {
+          const [cx, cy] = toMap(p.pos.x, p.pos.z);
+          g.fillRect(cx - 1, cy - 1, 2, 2);
+        }
+      }
     }
     const [px, py] = toMap(playerPos.x, playerPos.z);
     g.save();

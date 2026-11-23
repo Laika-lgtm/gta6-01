@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>Vice Point — Open World</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1622; font-family: Arial, sans-serif; }
@@ -10,13 +11,21 @@
   .hud { position: fixed; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.8); pointer-events: none; z-index: 5; }
   #hud-top { top: 14px; left: 16px; font-size: 20px; font-weight: bold; }
   #hud-district { font-size: 15px; font-weight: bold; margin-top: 2px; }
+  #hud-wanted { font-size: 22px; letter-spacing: 3px; margin-top: 4px; color: rgba(255,255,255,.55); }
+  #dialog { display: none; position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 6; width: min(560px, 90vw); background: rgba(10,10,24,.82); border: 1px solid rgba(255,210,59,.6); border-radius: 12px; padding: 12px 16px; color: #fff; }
+  #dialog-name { color: #ff2fb3; font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+  #dialog-text { font-size: 15px; line-height: 1.5; }
+  #dialog .dlg-hint { font-size: 11px; color: #ffe14d; margin-top: 6px; opacity: .85; }
+  #pause { display: none; position: fixed; inset: 0; z-index: 9; align-items: center; justify-content: center; background: rgba(8,8,20,.72); color: #fff; text-align: center; }
+  #pause h1 { font-size: 44px; letter-spacing: 8px; color: #ffe14d; margin: 0 0 8px; }
+  #pause p { font-size: 15px; color: #dfe8f2; }
   #hud-objective { top: 14px; left: 50%; transform: translateX(-50%); font-size: 15px; background: rgba(0,0,0,.45); padding: 7px 14px; border-radius: 20px; }
   #hud-speed { bottom: 18px; right: 20px; font-size: 26px; font-weight: bold; }
   #hud-hint { bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 13px; background: rgba(0,0,0,.45); padding: 6px 12px; border-radius: 16px; }
   #minimap { position: fixed; right: 16px; top: 14px; width: 168px; height: 168px; border-radius: 50%; border: 3px solid rgba(255,255,255,.75); box-shadow: 0 2px 14px rgba(0,0,0,.5); z-index: 5; background: #0e2a3a; }
   #start { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, rgba(20,8,40,.88), rgba(8,40,60,.88)); color: #fff; }
   #start .card { text-align: center; max-width: 560px; padding: 30px; }
-  #start h1 { font-size: 64px; margin: 0; letter-spacing: 4px; color: #ff2fb3; text-shadow: 0 0 24px #ff2fb3, 0 4px 0 #7a2ea6; }
+  #start h1 { font-size: 64px; margin: 0; letter-spacing: 4px; color: #ff2fb3; text-shadow: 0 0 26px #ff2fb3, 0 4px 0 #7a2ea6; }
   #start h2 { font-size: 18px; font-weight: normal; color: #ffe14d; margin: 6px 0 18px; }
   #start p { font-size: 14px; line-height: 1.7; color: #dfe8f2; }
   #startBtn { pointer-events: auto; cursor: pointer; font-size: 20px; font-weight: bold; color: #1a0b2e; background: #ffe14d; border: none; border-radius: 30px; padding: 14px 44px; margin-top: 10px; }
@@ -29,9 +38,11 @@
 </head>
 <body>
 <canvas id="scene"></canvas>
-<div class="hud" id="hud-top"><span id="hud-cash">$250</span><br><span id="hud-district">Neon Strip</span></div>
+<div class="hud" id="hud-top"><span id="hud-cash">$250</span><br><span id="hud-district">Neon Strip</span><br><span id="hud-wanted">☆☆☆☆☆</span></div>
 <div class="hud" id="hud-objective">Meet your contact at Pier 9</div>
 <canvas id="minimap" width="168" height="168"></canvas>
+<div id="dialog"><div id="dialog-name"></div><div id="dialog-text"></div><div class="dlg-hint">Press E to continue</div></div>
+<div id="pause"><div><h1>PAUSED</h1><p>Press Esc or P to keep driving Vice Point.</p></div></div>
 <div class="hud" id="hud-speed"></div>
 <div class="hud" id="hud-hint">WASD walk &nbsp;·&nbsp; Shift run &nbsp;·&nbsp; E enter car &nbsp;·&nbsp; click to look</div>
 <div id="start"><div class="card">
@@ -40,9 +51,10 @@
   <p>You are <b>Ray Delgado</b>, a driver-for-hire on the island of Vice Point.
   Walk the Neon Strip, steal a car, and meet your contact at <b>Pier 9</b> to
   start your first job. Cash, mission progress and your position save
-  automatically.</p>
+  automatically — every five seconds, and on every payout.</p>
   <p><b>WASD</b> move &nbsp;·&nbsp; <b>mouse</b> look &nbsp;·&nbsp; <b>Shift</b> sprint<br>
-  <b>E</b> get in / out of a car &nbsp;·&nbsp; <b>Space</b> handbrake</p>
+  <b>E</b> get in / out of a car &nbsp;·&nbsp; <b>Space</b> handbrake &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>Esc</b> pause<br>
+  Mara Voss has work for you — find her at <b>Pier 9</b>, down by the beach.</p>
   <button id="startBtn">START ENGINE</button>
   <p id="saveNote"></p>
 </div></div>
